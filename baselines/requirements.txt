@@ -1,0 +1,4 @@
+protobuf==3.6.1
+tensorflow==1.4
+keras==2.1.6
+numpy==1.16.1 
