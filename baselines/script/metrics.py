@@ -1,242 +1,25 @@
 """
-This file contains basic metrics used in addition to Diversity, Coverage, NDCG@10.
+This file functions and examples to calculate Diversity, Coverage, NDCG@10.
 These metrics can be imported and used for model evaluation across various tasks.
+Other common metrics are available in scikit-learn.
+
+Metrics can be imported as follows from within /baselines/script/:
+
+import metrics
+if __name__ == '__main__':
+    relevance = [3, 2, 3, 0, 1, 2, 3, 2, 3, 0]  # True relevance scores
+    ranking = [2, 0, 6, 8, 5, 1, 4, 3, 7, 9]    # Predicted ranking (as indices)
+    
+    # Calculate NDCG at different k values
+    ndcg_5 = metrics.ndcg_at_k(relevance, ranking, k=5)
+    print(ndcg_5)
 """
 from typing import List, Dict, Union, Tuple, Optional, Callable, Any, Set
 import numpy as np
 from collections import Counter
-from sklearn.metrics import confusion_matrix
-
-# Classification Metrics
-def accuracy_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Calculate accuracy score.
-    
-    Accuracy = (TP + TN) / (TP + TN + FP + FN)
-    
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth labels
-    y_pred : np.ndarray
-        Predicted labels
-        
-    Returns:
-    --------
-    float
-        Accuracy score between 0.0 and 1.0
-    """
-    return np.mean(y_true == y_pred)
-
-
-def precision_score(y_true: np.ndarray, y_pred: np.ndarray, average: str = 'binary') -> Union[float, np.ndarray]:
-    """
-    Calculate precision score.
-    
-    Precision = TP / (TP + FP)
-    
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth labels
-    y_pred : np.ndarray
-        Predicted labels
-    average : str, optional
-        Averaging method for multi-class classification:
-        - 'binary': Only report results for the positive class
-        - 'micro': Calculate metrics globally by counting total TP, FP, etc.
-        - 'macro': Calculate metrics for each class and take unweighted mean
-        - 'weighted': Calculate metrics for each class and take weighted mean by support
-        - None: Return a value for each class
-        
-    Returns:
-    --------
-    Union[float, np.ndarray]
-        Precision score(s)
-    """
-    if average == 'binary':
-        cm = confusion_matrix(y_true, y_pred)
-        TP = cm[1, 1]
-        FP = cm[0, 1]
-        return TP / (TP + FP) if (TP + FP) > 0 else 0.0
-    
-    # For multi-class, we would implement the other averaging methods
-    # This is a simplified implementation
-    return NotImplemented
-
-
-def recall_score(y_true: np.ndarray, y_pred: np.ndarray, average: str = 'binary') -> Union[float, np.ndarray]:
-    """
-    Calculate recall score.
-    
-    Recall = TP / (TP + FN)
-    
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth labels
-    y_pred : np.ndarray
-        Predicted labels
-    average : str, optional
-        Averaging method for multi-class classification
-        
-    Returns:
-    --------
-    Union[float, np.ndarray]
-        Recall score(s)
-    """
-    if average == 'binary':
-        cm = confusion_matrix(y_true, y_pred)
-        TP = cm[1, 1]
-        FN = cm[1, 0]
-        return TP / (TP + FN) if (TP + FN) > 0 else 0.0
-    
-    # For multi-class, we would implement the other averaging methods
-    return NotImplemented
-
-
-def f1_score(y_true: np.ndarray, y_pred: np.ndarray, average: str = 'binary') -> Union[float, np.ndarray]:
-    """
-    Calculate F1 score.
-    
-    F1 = 2 * (precision * recall) / (precision + recall)
-    
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth labels
-    y_pred : np.ndarray
-        Predicted labels
-    average : str, optional
-        Averaging method for multi-class classification
-        
-    Returns:
-    --------
-    Union[float, np.ndarray]
-        F1 score(s) between 0.0 and 1.0
-    """
-    precision = precision_score(y_true, y_pred, average=average)
-    recall = recall_score(y_true, y_pred, average=average)
-    
-    if precision + recall == 0:
-        return 0.0
-    
-    return 2 * (precision * recall) / (precision + recall)
-
-
-def auc_roc(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    """
-    Calculate Area Under the Receiver Operating Characteristic Curve (ROC AUC).
-    
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth binary labels
-    y_score : np.ndarray
-        Predicted probabilities or scores
-        
-    Returns:
-    --------
-    float
-        AUC-ROC score between 0.0 and 1.0
-    """
-    # This is a simplified implementation
-    # In practice, you'd want to use sklearn.metrics.roc_auc_score
-    
-    # Sort instances by predicted score
-    sorted_indices = np.argsort(y_score)[::-1]
-    sorted_y_true = y_true[sorted_indices]
-    
-    # Calculate true positive rate and false positive rate
-    n_pos = np.sum(y_true == 1)
-    n_neg = np.sum(y_true == 0)
-    
-    if n_pos == 0 or n_neg == 0:
-        return 0.5  # Undefined, return random guess
-    
-    # Calculate area
-    area = 0.0
-    false_pos_count = 0
-    
-    for label in sorted_y_true:
-        if label == 1:
-            area += false_pos_count / n_neg
-        else:
-            false_pos_count += 1
-    
-    return area / n_pos
-
-
-# Regression Metrics
-def mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Calculate Mean Squared Error.
-    
-    MSE = (1/n) * Σ(y_true - y_pred)²
-    
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth values
-    y_pred : np.ndarray
-        Predicted values
-        
-    Returns:
-    --------
-    float
-        Mean squared error (non-negative)
-    """
-    return np.mean((y_true - y_pred) ** 2)
-
-
-def mean_absolute_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Calculate Mean Absolute Error.
-    
-    MAE = (1/n) * Σ|y_true - y_pred|
-    
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth values
-    y_pred : np.ndarray
-        Predicted values
-        
-    Returns:
-    --------
-    float
-        Mean absolute error (non-negative)
-    """
-    return np.mean(np.abs(y_true - y_pred))
-
-
-def r_squared(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Calculate R² (Coefficient of Determination).
-    
-    R² = 1 - (Σ(y_true - y_pred)² / Σ(y_true - mean(y_true))²)
-    
-    Parameters:
-    -----------
-    y_true : np.ndarray
-        Ground truth values
-    y_pred : np.ndarray
-        Predicted values
-        
-    Returns:
-    --------
-    float
-        R² score, can be negative if model is worse than mean prediction
-    """
-    mean_y = np.mean(y_true)
-    ss_total = np.sum((y_true - mean_y) ** 2)
-    ss_residual = np.sum((y_true - y_pred) ** 2)
-    
-    if ss_total == 0:
-        return 0.0  # Undefined, return 0
-    
-    return 1 - (ss_residual / ss_total)
-
+from sklearn.metrics import (
+    ndcg_score
+)
 
 # Ranking and Recommendation Metrics
 def ndcg_at_k(y_true: List[int], y_pred: List[int], k: int = 10) -> float:
@@ -263,25 +46,41 @@ def ndcg_at_k(y_true: List[int], y_pred: List[int], k: int = 10) -> float:
     float
         NDCG@k score between 0.0 and 1.0
     """
-    def dcg_at_k(r: List[int], k: int) -> float:
-        """Calculate DCG@k."""
-        r = np.array(r)[:k]
-        return np.sum((2 ** r - 1) / np.log2(np.arange(1, len(r) + 1) + 1))
-    
-    # Get relevance scores for predicted ranking
-    actual_relevance = [y_true[i] for i in y_pred[:k]]
-    
-    # Calculate DCG@k
-    dcg = dcg_at_k(actual_relevance, k)
-    
-    # Calculate IDCG@k (DCG@k with perfect ranking)
-    ideal_relevance = sorted(y_true, reverse=True)[:k]
-    idcg = dcg_at_k(ideal_relevance, k)
-    
-    if idcg == 0:
-        return 0.0  # Avoid division by zero
+    try:
+        # Convert to numpy arrays for sklearn's ndcg_score
+        # Reshape for sklearn's expected format [n_samples, n_labels]
+        true_relevance = np.asarray([y_true])
         
-    return dcg / idcg
+        # Create a scores matrix where the predicted ranks get higher scores
+        # (reverse of rank position to make higher ranks have higher scores)
+        scores = np.zeros((1, len(y_true)))
+        for i, idx in enumerate(y_pred[:k]):
+            # Give score based on rank position (higher rank = higher score)
+            scores[0, idx] = len(y_pred) - i
+        
+        return ndcg_score(true_relevance, scores, k=k)
+    except (ValueError, ImportError):
+        # Fall back to original implementation if scikit-learn ndcg_score isn't available
+        # or has formatting issues
+        def dcg_at_k(r: List[int], k: int) -> float:
+            """Calculate DCG@k."""
+            r = np.array(r)[:k]
+            return np.sum((2 ** r - 1) / np.log2(np.arange(1, len(r) + 1) + 1))
+        
+        # Get relevance scores for predicted ranking
+        actual_relevance = [y_true[i] for i in y_pred[:k]]
+        
+        # Calculate DCG@k
+        dcg = dcg_at_k(actual_relevance, k)
+        
+        # Calculate IDCG@k (DCG@k with perfect ranking)
+        ideal_relevance = sorted(y_true, reverse=True)[:k]
+        idcg = dcg_at_k(ideal_relevance, k)
+        
+        if idcg == 0:
+            return 0.0  # Avoid division by zero
+            
+        return dcg / idcg
 
 
 def diversity(recommendations: List[List[int]], item_features: Dict[int, List[Any]]) -> float:
@@ -303,7 +102,7 @@ def diversity(recommendations: List[List[int]], item_features: Dict[int, List[An
     float
         Diversity score between 0.0 and 1.0
     """
-    # This is a simplified implementation
+    # This is a specialized metric not available in scikit-learn
     # Calculate average pairwise distance between items in recommendations
     
     diversity_scores = []
@@ -359,6 +158,7 @@ def coverage(recommendations: List[List[int]], catalog_size: int) -> float:
     float
         Coverage score between 0.0 and 1.0
     """
+    # This is a specialized recommendation metric not available in scikit-learn
     # Flatten all recommendations and count unique items
     all_recommended_items = set()
     for user_recs in recommendations:
@@ -371,9 +171,8 @@ def coverage(recommendations: List[List[int]], catalog_size: int) -> float:
 
 
 # Testing code
-def demonstrate_ranking_metrics():
-    """Demonstrate the usage of ranking metrics."""
-    print("\n===== Ranking Metrics =====")
+if __name__ == "__main__":
+    print("===== Ranking and Recommendation Metrics Demo =====")
     
     # Sample data for NDCG@k
     relevance = [3, 2, 3, 0, 1, 2, 3, 2, 3, 0]  # True relevance scores
@@ -387,11 +186,6 @@ def demonstrate_ranking_metrics():
     print(f"NDCG@5: {ndcg_5:.4f}")
     print(f"NDCG@10: {ndcg_10:.4f}")
 
-
-def demonstrate_recommendation_metrics():
-    """Demonstrate the usage of recommendation system metrics."""
-    print("\n===== Recommendation Metrics =====")
-    
     # Sample data - recommendations for users
     recommendations = [
         [101, 102, 103, 104],  # User 1's recommendations
@@ -423,21 +217,5 @@ def demonstrate_recommendation_metrics():
     cov_score = coverage(recommendations, total_catalog_size)
     
     # Print results
-    print(f"Diversity Score: {div_score:.4f}")
+    print(f"\nDiversity Score: {div_score:.4f}")
     print(f"Coverage Score: {cov_score:.4f}")
-    
-    # Detailed explanation of diversity and coverage
-    print("\nDiversity Explanation:")
-    print("- Measures how different the recommended items are from each other")
-    print("- Higher score (closer to 1.0) means more diverse recommendations")
-    print("- Calculated using the Jaccard distance between item features")
-    
-    print("\nCoverage Explanation:")
-    print("- Measures what percentage of the catalog is being recommended")
-    print("- Higher score (closer to 1.0) means more items from catalog are recommended")
-    print(f"- In this example, {int(cov_score * total_catalog_size)} out of {total_catalog_size} items are recommended")
-
-    
-if __name__ == "__main__":
-    demonstrate_ranking_metrics()
-    demonstrate_recommendation_metrics()
