@@ -1,221 +1,368 @@
-"""
-This file functions and examples to calculate Diversity, Coverage, NDCG@10.
-These metrics can be imported and used for model evaluation across various tasks.
-Other common metrics are available in scikit-learn.
-
-Metrics can be imported as follows from within /baselines/script/:
-
-import metrics
-if __name__ == '__main__':
-    relevance = [3, 2, 3, 0, 1, 2, 3, 2, 3, 0]  # True relevance scores
-    ranking = [2, 0, 6, 8, 5, 1, 4, 3, 7, 9]    # Predicted ranking (as indices)
-    
-    # Calculate NDCG at different k values
-    ndcg_5 = metrics.ndcg_at_k(relevance, ranking, k=5)
-    print(ndcg_5)
-"""
-from typing import List, Dict, Union, Tuple, Optional, Callable, Any, Set
 import numpy as np
-from collections import Counter
-from sklearn.metrics import (
-    ndcg_score
-)
+import torch
+from typing import List, Dict, Union, Optional
+from torch import Tensor
 
-# Ranking and Recommendation Metrics
-def ndcg_at_k(y_true: List[int], y_pred: List[int], k: int = 10) -> float:
-    """
-    Calculate Normalized Discounted Cumulative Gain at rank k (NDCG@k).
+def reshape_to_2d(tensor: Tensor, n_columns: int) -> Tensor:
+    if tensor.dim() == 1:
+        if tensor.size(0) % n_columns != 0:
+            raise ValueError(
+                f"Tensor length ({tensor.size(0)}) must be divisible by n_columns ({n_columns})"
+            )
+        n_rows = tensor.size(0) // n_columns
+        return tensor.reshape(n_rows, n_columns)
+    elif tensor.dim() == 2 and tensor.size(1) == 1:
+        if tensor.size(0) % n_columns != 0:
+            raise ValueError(
+                f"Tensor length ({tensor.size(0)}) must be divisible by n_columns ({n_columns})"
+            )
+        n_rows = tensor.size(0) // n_columns
+        return tensor.reshape(n_rows, n_columns)
+    else:
+        raise ValueError(
+            "Input tensor must be 1-dimensional or 2-dimensional with one column"
+        )
+
+class Metric(object):
+    def __init__(self):
+        self._name = ""
+
+    def reset(self):
+        raise NotImplementedError("Custom Metrics must implement this function")
+
+    def __call__(self, y_pred: Tensor, y_true: Tensor):
+        raise NotImplementedError("Custom Metrics must implement this function")
+
+
+class MultipleMetrics(object):
+    def __init__(self, metrics: List[Union[Metric, object]], prefix: str = ""):
+        instantiated_metrics = []
+        for metric in metrics:
+            if isinstance(metric, type):
+                instantiated_metrics.append(metric())
+            else:
+                instantiated_metrics.append(metric)
+        self._metrics = instantiated_metrics
+        self.prefix = prefix
+
+    def reset(self):
+        for metric in self._metrics:
+            metric.reset()
+
+    def __call__(self, y_pred: Tensor, y_true: Tensor) -> Dict:
+        logs = {}
+        for metric in self._metrics:
+            if isinstance(metric, Metric):
+                logs[self.prefix + metric._name] = metric(y_pred, y_true)
+            elif isinstance(metric):
+                metric.update(y_pred, y_true.int())  # type: ignore[attr-defined]
+                logs[self.prefix + type(metric).__name__] = (
+                    metric.compute().detach().cpu().numpy()
+                )
+        return logs
+
+class Coverage(Metric):
+    r"""
+    Coverage metric measures the percentage of items that are recommended at least once.
     
-    NDCG@k = DCG@k / IDCG@k
+    Parameters
+    ----------
+    n_cols: int, default = 10
+        Number of columns in the input tensors. This parameter is neccessary
+        because the input tensors are reshaped to 2D tensors. n_cols is the
+        number of columns in the reshaped tensor. 
+    k: int, Optional, default = None
+        Number of top items to consider. It must be less than or equal to n_cols.
+        If is None, k will be equal to n_cols.
+    n_items_catalog: int, default = None
+        Total number of items in the catalog. If None, it will be inferred from the data.
     
-    Where:
-    DCG@k = Σ(2^relevance_i - 1) / log2(i + 1), for i from 1 to k
-    IDCG@k = DCG@k for the ideal ranking
-    
-    Parameters:
-    -----------
-    y_true : List[int]
-        Ground truth relevance scores (higher is more relevant)
-    y_pred : List[int]
-        Predicted ranking of items
-    k : int, optional
-        Rank position to calculate NDCG for
-        
-    Returns:
+    Examples
     --------
-    float
-        NDCG@k score between 0.0 and 1.0
+    >>> import torch
+    >>> from pytorch_widedeep.metrics import Coverage
+    >>>
+    >>> coverage = Coverage(k=10, n_items_catalog=100)
+    >>> y_pred = torch.rand(100, 5)
+    >>> y_true = torch.randint(2, (100,))
+    >>> score = coverage(y_pred, y_true)
     """
-    try:
-        # Convert to numpy arrays for sklearn's ndcg_score
-        # Reshape for sklearn's expected format [n_samples, n_labels]
-        true_relevance = np.asarray([y_true])
+    def __init__(
+        self, 
+        n_cols: int = 10, 
+        k: Optional[int] = None, 
+        n_items_catalog: Optional[int] = None
+    ):
+        super(Coverage, self).__init__()
         
-        # Create a scores matrix where the predicted ranks get higher scores
-        # (reverse of rank position to make higher ranks have higher scores)
-        scores = np.zeros((1, len(y_true)))
-        for i, idx in enumerate(y_pred[:k]):
-            # Give score based on rank position (higher rank = higher score)
-            scores[0, idx] = len(y_pred) - i
+        if k is not None and k > n_cols:
+            raise ValueError(
+                f"k must be less than or equal to n_cols. Got k: {k}, n_cols: {n_cols}"
+            )
         
-        return ndcg_score(true_relevance, scores, k=k)
-    except (ValueError, ImportError):
-        # Fall back to original implementation if scikit-learn ndcg_score isn't available
-        # or has formatting issues
-        def dcg_at_k(r: List[int], k: int) -> float:
-            """Calculate DCG@k."""
-            r = np.array(r)[:k]
-            return np.sum((2 ** r - 1) / np.log2(np.arange(1, len(r) + 1) + 1))
+        self.n_cols = n_cols
+        self.k = k if k is not None else n_cols
+        self.n_items_catalog = n_items_catalog
+        self._name = f"coverage@{k}"
+        self.reset()
+    
+    def reset(self):
+        self.recommended_items = None
+        self.count = 0
+    
+    def __call__(self, y_pred: Tensor, y_true: Tensor) -> np.ndarray:
+        device = y_pred.device
         
-        # Get relevance scores for predicted ranking
-        actual_relevance = [y_true[i] for i in y_pred[:k]]
+        if y_pred.ndim > 1 and y_pred.size(1) > 1:
+            # multiclass
+            y_pred = y_pred.topk(1, 1)[1]
         
-        # Calculate DCG@k
-        dcg = dcg_at_k(actual_relevance, k)
+        y_pred_2d = reshape_to_2d(y_pred, self.n_cols)
         
-        # Calculate IDCG@k (DCG@k with perfect ranking)
-        ideal_relevance = sorted(y_true, reverse=True)[:k]
-        idcg = dcg_at_k(ideal_relevance, k)
+        batch_size = y_pred_2d.shape[0]
         
-        if idcg == 0:
-            return 0.0  # Avoid division by zero
-            
-        return dcg / idcg
+        # Get the top-k items for each user/query
+        _, top_k_indices = torch.topk(y_pred_2d, self.k, dim=1)
+        
+        # If n_items_catalog is not provided, infer it from the data
+        if self.n_items_catalog is None:
+            self.n_items_catalog = int(y_pred_2d.max().item()) + 1
+        
+        # Update the set of recommended items
+        if self.recommended_items is None:
+            self.recommended_items = set(top_k_indices.cpu().numpy().flatten())
+        else:
+            self.recommended_items.update(top_k_indices.cpu().numpy().flatten())
+        
+        # Calculate coverage
+        coverage = len(self.recommended_items) / self.n_items_catalog
+        
+        self.count += batch_size
+        
+        return np.array(coverage)
 
 
-def diversity(recommendations: List[List[int]], item_features: Dict[int, List[Any]]) -> float:
-    """
-    Calculate diversity of recommendations.
+class Diversity(Metric):
+    r"""
+    Diversity metric measures the average pairwise distance between recommended items.
     
-    Diversity measures how different the recommended items are from each other.
-    Higher diversity means more varied recommendations.
+    Parameters
+    ----------
+    n_cols: int, default = 10
+        Number of columns in the input tensors. This parameter is neccessary
+        because the input tensors are reshaped to 2D tensors. n_cols is the
+        number of columns in the reshaped tensor.
+    k: int, Optional, default = None
+        Number of top items to consider. It must be less than or equal to n_cols.
+        If is None, k will be equal to n_cols.
+    item_features: Optional[Tensor], default = None
+        Features for each item in the catalog. If provided, the diversity will be
+        calculated based on the cosine distance between item features.
+        Shape: (n_items_catalog, n_features)
+    distance_metric: str, default = 'cosine'
+        Distance metric to use. Can be 'cosine', 'euclidean', or 'hamming'.
     
-    Parameters:
-    -----------
-    recommendations : List[List[int]]
-        List of recommendation lists (item IDs) for each user
-    item_features : Dict[int, List[Any]]
-        Dictionary mapping item IDs to their feature vectors
-        
-    Returns:
+    Examples
     --------
-    float
-        Diversity score between 0.0 and 1.0
+    >>> import torch
+    >>> from pytorch_widedeep.metrics import Diversity
+    >>>
+    >>> # Create item features matrix (100 items with 20 features each)
+    >>> item_features = torch.rand(100, 20)
+    >>> diversity = Diversity(k=10, item_features=item_features)
+    >>> y_pred = torch.rand(100, 5)
+    >>> y_true = torch.randint(2, (100,))
+    >>> score = diversity(y_pred, y_true)
     """
-    # This is a specialized metric not available in scikit-learn
-    # Calculate average pairwise distance between items in recommendations
+    def __init__(
+        self, 
+        n_cols: int = 10, 
+        k: Optional[int] = None, 
+        item_features: Optional[Tensor] = None,
+        distance_metric: str = 'cosine'
+    ):
+        super(Diversity, self).__init__()
+        
+        if k is not None and k > n_cols:
+            raise ValueError(
+                f"k must be less than or equal to n_cols. Got k: {k}, n_cols: {n_cols}"
+            )
+        
+        if distance_metric not in ['cosine', 'euclidean', 'hamming']:
+            raise ValueError(
+                f"distance_metric must be one of ['cosine', 'euclidean', 'hamming']. Got {distance_metric}"
+            )
+        
+        self.n_cols = n_cols
+        self.k = k if k is not None else n_cols
+        self.item_features = item_features
+        self.distance_metric = distance_metric
+        self._name = f"diversity@{k}"
+        self.reset()
     
-    diversity_scores = []
+    def reset(self):
+        self.sum_diversity = 0.0
+        self.count = 0
     
-    for user_recs in recommendations:
-        if len(user_recs) <= 1:
-            continue
+    def _compute_pairwise_distance(self, indices: Tensor) -> Tensor:
+        """
+        Compute the pairwise distance between items based on their features.
+        
+        Parameters
+        ----------
+        indices: Tensor
+            Indices of the top-k items. Shape: (batch_size, k)
             
-        # Calculate all pairwise distances
-        distances = []
-        for i in range(len(user_recs)):
-            for j in range(i + 1, len(user_recs)):
-                item_i = user_recs[i]
-                item_j = user_recs[j]
+        Returns
+        -------
+        Tensor
+            Pairwise distances between items. Shape: (batch_size,)
+        """
+        device = indices.device
+        batch_size, k = indices.shape
+        
+        if self.item_features is None:
+            # If no item features are provided, return a constant diversity
+            return torch.ones(batch_size, device=device)
+        
+        # Get features for the selected items
+        features = self.item_features.to(device)[indices]  # Shape: (batch_size, k, n_features)
+        
+        total_distances = torch.zeros(batch_size, device=device)
+        
+        for i in range(k):
+            for j in range(i + 1, k):
+                if self.distance_metric == 'cosine':
+                    # Compute cosine similarity and convert to distance
+                    similarity = torch.nn.functional.cosine_similarity(
+                        features[:, i], features[:, j], dim=1
+                    )
+                    distance = 1 - similarity
+                elif self.distance_metric == 'euclidean':
+                    # Compute Euclidean distance
+                    distance = torch.norm(features[:, i] - features[:, j], dim=1)
+                else:  # hamming
+                    # Compute Hamming distance (assuming binary features or converting to binary)
+                    binary_i = (features[:, i] > 0.5).float()
+                    binary_j = (features[:, j] > 0.5).float()
+                    distance = torch.sum(binary_i != binary_j, dim=1) / features.size(2)
                 
-                # Only consider items that exist in our feature dictionary
-                if item_i in item_features and item_j in item_features:
-                    # Calculate Jaccard distance between feature vectors
-                    features_i = set(item_features[item_i])
-                    features_j = set(item_features[item_j])
-                    
-                    if len(features_i.union(features_j)) == 0:
-                        continue
-                        
-                    jaccard_distance = 1 - len(features_i.intersection(features_j)) / len(features_i.union(features_j))
-                    distances.append(jaccard_distance)
+                total_distances += distance
         
-        if distances:
-            diversity_scores.append(np.mean(distances))
+        # Normalize by the number of pairs
+        n_pairs = k * (k - 1) / 2
+        avg_distances = total_distances / n_pairs
+        
+        return avg_distances
     
-    # Calculate average diversity across all users
-    if not diversity_scores:
-        return 0.0
+    def __call__(self, y_pred: Tensor, y_true: Tensor) -> np.ndarray:
+        device = y_pred.device
         
-    return np.mean(diversity_scores)
+        if y_pred.ndim > 1 and y_pred.size(1) > 1:
+            # multiclass
+            y_pred = y_pred.topk(1, 1)[1]
+        
+        y_pred_2d = reshape_to_2d(y_pred, self.n_cols)
+        
+        batch_size = y_pred_2d.shape[0]
+        
+        # Get the top-k items for each user/query
+        _, top_k_indices = torch.topk(y_pred_2d, self.k, dim=1)
+        
+        # Compute diversity based on pairwise distances
+        batch_diversity = self._compute_pairwise_distance(top_k_indices)
+        
+        self.sum_diversity += batch_diversity.sum().item()
+        self.count += batch_size
+        
+        return np.array(self.sum_diversity / max(self.count, 1))
 
 
-def coverage(recommendations: List[List[int]], catalog_size: int) -> float:
-    """
-    Calculate catalog coverage of recommendations.
-    
-    Coverage measures the percentage of items in the catalog that are recommended at least once.
-    
-    Parameters:
-    -----------
-    recommendations : List[List[int]]
-        List of recommendation lists (item IDs) for each user
-    catalog_size : int
-        Total number of items in the catalog
-        
-    Returns:
+class NDCG_at_k(Metric):
+    r"""
+    Normalized Discounted Cumulative Gain (NDCG) at k.
+
+    Parameters
+    ----------
+    n_cols: int, default = 10
+        Number of columns in the input tensors. This parameter is neccessary
+        because the input tensors are reshaped to 2D tensors. n_cols is the
+        number of columns in the reshaped tensor. 
+    k: int, Optional, default = None
+        Number of top items to consider. It must be less than or equal to n_cols.
+        If is None, k will be equal to n_cols.
+    eps: float, default = 1e-8
+        Small value to avoid division by zero.
+
+    Examples
     --------
-    float
-        Coverage score between 0.0 and 1.0
+    >>> import torch
+    >>> from pytorch_widedeep.metrics import NDCG_at_k
+    >>>
+    >>> ndcg = NDCG_at_k(k=10)
+    >>> y_pred = torch.rand(100, 5)
+    >>> y_true = torch.randint(2, (100,))
+    >>> score = ndcg(y_pred, y_true)
     """
-    # This is a specialized recommendation metric not available in scikit-learn
-    # Flatten all recommendations and count unique items
-    all_recommended_items = set()
-    for user_recs in recommendations:
-        all_recommended_items.update(user_recs)
-    
-    # Calculate coverage
-    coverage_score = len(all_recommended_items) / catalog_size if catalog_size > 0 else 0.0
-    
-    return coverage_score
+
+    def __init__(self, n_cols: int = 10, k: Optional[int] = None, eps: float = 1e-8):
+        super(NDCG_at_k, self).__init__()
+
+        if k is not None and k > n_cols:
+            raise ValueError(
+                f"k must be less than or equal to n_cols. Got k: {k}, n_cols: {n_cols}"
+            )
+
+        self.n_cols = n_cols
+        self.k = k if k is not None else n_cols
+        self.eps = eps
+        self._name = f"ndcg@{k}"
+        self.reset()
+
+    def reset(self):
+        self.sum_ndcg = 0.0
+        self.count = 0
+
+    def __call__(self, y_pred: Tensor, y_true: Tensor) -> np.ndarray:
+        # NDGC@k is supposed to be used when the output reflects interest
+        # scores, i.e, could be used in a regression or a multiclass problem.
+        # If regression y_pred will be a float tensor, if multiclass, y_pred
+        # will be a float tensor with the output of a softmax activation
+        # function and we need to turn it into a 1D tensor with the class.
+        # Finally, for binary problems, please use BinaryNDCG_at_k
+        device = y_pred.device
+
+        if y_pred.ndim > 1 and y_pred.size(1) > 1:
+            # multiclass
+            y_pred = y_pred.topk(1, 1)[1]
+
+        y_pred_2d = reshape_to_2d(y_pred, self.n_cols)
+        y_true_2d = reshape_to_2d(y_true, self.n_cols)
+
+        batch_size = y_true_2d.shape[0]
+
+        _, top_k_indices = torch.topk(y_pred_2d, self.k, dim=1)
+        top_k_relevance = y_true_2d.gather(1, top_k_indices)
+        discounts = 1.0 / torch.log2(
+            torch.arange(2, top_k_relevance.shape[1] + 2, device=device)
+        )
+
+        dcg = (torch.pow(2, top_k_relevance) - 1) * discounts.unsqueeze(0)
+        dcg = dcg.sum(dim=1)
+
+        sorted_relevance, _ = torch.sort(y_true_2d, dim=1, descending=True)
+        ideal_relevance = sorted_relevance[:, : self.k]
+
+        idcg = (torch.pow(2, ideal_relevance) - 1) * discounts[
+            : ideal_relevance.shape[1]
+        ].unsqueeze(0)
+
+        idcg = idcg.sum(dim=1)
+        ndcg = dcg / (idcg + self.eps)
+
+        self.sum_ndcg += ndcg.sum().item()
+        self.count += batch_size
+
+        return np.array(self.sum_ndcg / max(self.count, 1))
 
 
-# Testing code
-if __name__ == "__main__":
-    print("===== Ranking and Recommendation Metrics Demo =====")
-    
-    # Sample data for NDCG@k
-    relevance = [3, 2, 3, 0, 1, 2, 3, 2, 3, 0]  # True relevance scores
-    ranking = [2, 0, 6, 8, 5, 1, 4, 3, 7, 9]    # Predicted ranking (as indices)
-    
-    # Calculate NDCG at different k values
-    ndcg_5 = ndcg_at_k(relevance, ranking, k=5)
-    ndcg_10 = ndcg_at_k(relevance, ranking, k=10)
-    
-    # Print results
-    print(f"NDCG@5: {ndcg_5:.4f}")
-    print(f"NDCG@10: {ndcg_10:.4f}")
-
-    # Sample data - recommendations for users
-    recommendations = [
-        [101, 102, 103, 104],  # User 1's recommendations
-        [102, 105, 106, 107],  # User 2's recommendations
-        [103, 108, 109, 110],  # User 3's recommendations
-        [101, 105, 108, 111]   # User 4's recommendations
-    ]
-    
-    # Item features for diversity calculation
-    item_features = {
-        101: ["action", "thriller", "2000s"],
-        102: ["comedy", "romance", "2010s"],
-        103: ["action", "sci-fi", "2010s"],
-        104: ["drama", "crime", "1990s"],
-        105: ["comedy", "family", "2000s"],
-        106: ["action", "comedy", "2010s"],
-        107: ["drama", "romance", "2000s"],
-        108: ["sci-fi", "thriller", "2020s"],
-        109: ["action", "adventure", "2020s"],
-        110: ["horror", "thriller", "2010s"],
-        111: ["documentary", "history", "2020s"]
-    }
-    
-    # Calculate diversity
-    div_score = diversity(recommendations, item_features)
-    
-    # Calculate coverage
-    total_catalog_size = 15  # Assuming total catalog has 15 items (101-115)
-    cov_score = coverage(recommendations, total_catalog_size)
-    
-    # Print results
-    print(f"\nDiversity Score: {div_score:.4f}")
-    print(f"Coverage Score: {cov_score:.4f}")
