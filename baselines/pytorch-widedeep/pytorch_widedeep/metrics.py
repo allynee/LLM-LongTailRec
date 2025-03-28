@@ -1,3 +1,4 @@
+from typing import Set
 import numpy as np
 import torch
 from torchmetrics import Metric as TorchMetric
@@ -840,6 +841,18 @@ class Recall_at_k(Metric):
         self.sum_recall += recall.sum().item()
         self.count += batch_size
         return np.array(self.sum_recall / max(self.count, 1))
+
+# added
+class CatalogueCoverage(Metric):
+    def __init__(self, n_catalogue_categories: int):
+        super(CatalogueCoverage, self).__init__()
+        self.n_catalogue_categories = n_catalogue_categories
+
+    def __call__(self, categories:Set):
+        print(f"The categories are {categories}")
+        print(f"We have {self.n_catalogue_categories} categories")
+        print(f"THe result is {len(categories) / self.n_catalogue_categories}")
+        return len(categories) / self.n_catalogue_categories
 
 
 class Coverage(Metric):

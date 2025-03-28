@@ -7,7 +7,7 @@ def example_ndcg():
 
 def example_coverage():
     coverage = Coverage(k=10, n_items_catalog=100)
-    y_pred = torch.rand(100, 5)
+    y_pred = torch.rand(100, 5) 
     y_true = torch.randint(2, (100,))
     score = coverage(y_pred, y_true)
     print(score)

@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Set, Union, Optional
 from torch import Tensor
 
 def reshape_to_2d(tensor: Tensor, n_columns: int) -> Tensor:
@@ -61,6 +61,14 @@ class MultipleMetrics(object):
                 )
         return logs
 
+class CatalogueCoverage(Metric):
+    def __init__(self, n_catalogue_categories: int):
+        super(CatalogueCoverage, self).__init__()
+        self.n_catalogue_categories = n_catalogue_categories
+
+    def __call__(self, categories:Set):
+        return len(categories) / self.n_catalogue_categories
+
 class Coverage(Metric):
     r"""
     Coverage metric measures the percentage of items that are recommended at least once.
@@ -72,12 +80,7 @@ class Coverage(Metric):
         because the input tensors are reshaped to 2D tensors. n_cols is the
         number of columns in the reshaped tensor. 
     k: int, Optional, default = None
-        Number of top items to consider. It must be less than or equal to n_cols.
-        If is None, k will be equal to n_cols.
-    n_items_catalog: int, default = None
-        Total number of items in the catalog. If None, it will be inferred from the data.
-    
-    Examples
+
     --------
     >>> import torch
     >>> from pytorch_widedeep.metrics import Coverage
