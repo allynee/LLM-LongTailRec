@@ -854,6 +854,21 @@ class CatalogueCoverage(Metric):
         print(f"THe result is {len(categories) / self.n_catalogue_categories}")
         return len(categories) / self.n_catalogue_categories
 
+class Diversity(Metric):
+    """
+    where N is the number of items, d(xi, xj ) calculates the pairwise distance between two items in the
+    set recommended for the user and U is the total number of users. This maximized will be maximized
+    if pairwise distance is used. If cosine similarity is used, d(xi, xj ) = 1 − cos(xi, xj ).
+
+    However, we do not have a pairwise distance or way to calculate cosine similarity between item in a pair.
+    For each individual, we will calculate the unique number of categories / the total number of categories
+    and then average it over all users.
+    """
+    def  __init__(self, n_catalogue_categories: int):
+        super(CatalogueCoverage, self).__init__()
+        self.n_catalogue_categories = n_catalogue_categories
+
+
 
 class Coverage(Metric):
     r"""

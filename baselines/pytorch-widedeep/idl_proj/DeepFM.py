@@ -112,15 +112,15 @@ if __name__ == "__main__":
             column_idx=tab_preprocessor.column_idx, num_factors=8,
             cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
         ),
-        # "DeepFFM": DeepFieldAwareFactorizationMachine(
-        #     column_idx=tab_preprocessor.column_idx, num_factors=8,
-        #     cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
-        # ),
-        # "XDeepFM": ExtremeDeepFactorizationMachine(
-        #     column_idx=tab_preprocessor.column_idx, input_dim=16,
-        #     cat_embed_input=cat_embed_input, cin_layer_dims=[32, 16],
-        #     mlp_hidden_dims=[64, 32]
-        # )
+        "DeepFFM": DeepFieldAwareFactorizationMachine(
+            column_idx=tab_preprocessor.column_idx, num_factors=8,
+            cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
+        ),
+        "XDeepFM": ExtremeDeepFactorizationMachine(
+            column_idx=tab_preprocessor.column_idx, input_dim=16,
+            cat_embed_input=cat_embed_input, cin_layer_dims=[32, 16],
+            mlp_hidden_dims=[64, 32]
+        )
     }
     wide = Wide(input_dim=X_tab_tr.max(), pred_dim=1)
 
@@ -174,16 +174,14 @@ if __name__ == "__main__":
         # coverage needs predicted score for all users
         # input is (num_users, num_items) 
         coverage_score = coverage_metric(torch.tensor(predictions))
-        print(torch.tensor(predictions))
         print(f"The torch.tensor for predictions is shape {torch.tensor(predictions).shape}")
         print(f"Inside the shape is {predictions[0]}")
         # [p(category1), p(cat2)....]
         # 1
         print(f"Coverage: {coverage_score}, NDCG@5: {ndcg_score}")
-        print(f"The number of users in the test is {len(test_df['user_id'].unique())}, total number is {len(df['user_id'])}")
 
         # calculating coverage
-        def extract_genre(input:str):
+        def extract_genres(input:str):
             """
             Extracts individual genres from a string of genres
             coming from the original cat data.
@@ -194,7 +192,7 @@ if __name__ == "__main__":
 
         original_cat_data = tab_preprocessor.inverse_transform(X_tab_te)
         # convert genres from comedy_animation to [comedy, animation]
-        genres = original_cat_data["genre_list"].apply(extract_genre)
+        genres = original_cat_data["genre_list"].apply(extract_genres)
         # loop through all df and then get unique genres
         unique_genres = set()
         for genre in genres:
@@ -203,11 +201,21 @@ if __name__ == "__main__":
         unique_genres = list(unique_genres)
 
         catalog_coverage_score = catalogue_coverage_metric(unique_genres)
+        
+        # calculate diversity information
+        # need to group by the user id, and get the total number of unique categories recommended
+        genre_summary = original_cat_data.groupby("user_id")["genre_list"].apply(
+            lambda x: set(genre for genre_str in x for genre in extract_genres(genre_str))
+        ).reset_index()
 
+        genre_summary["num_unique_genres"] = genre_summary["genre_list"].apply(lambda x: len(x))
+        genre_summary["diversity"] = genre_summary["num_unique_genres"] / len(list_of_genres)
+        diversity = genre_summary["diversity"].mean()
 
         wandb.log({
             "ndcg@5": ndcg_score,
-            "catalogue_coverage": catalog_coverage_score
+            "catalogue_coverage": catalog_coverage_score,
+            "diversity": diversity
         })
 
         model_path = os.path.join(MODEL_SAVE_PATH, f"{name}_model.pth")
@@ -215,7 +223,3 @@ if __name__ == "__main__":
         print(f"Model {name} saved at {model_path}")
 
         wandb.finish()
-
-
-    # print(f"The cat data is \n{original_cat_data}")
-    # print(f"The predictions are \n{predictions}, shape is {predictions.shape}")
