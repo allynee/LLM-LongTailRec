@@ -25,3 +25,9 @@ Supported models:
 - DeepFM
 - DeepFFM
 - XDeepFM
+
+3. Running custom metrics example
+```
+cd src
+python3 -m baselines.custom_metrics_example
+```

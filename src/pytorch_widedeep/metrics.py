@@ -6,7 +6,6 @@ from torchmetrics import Metric as TorchMetric
 from pytorch_widedeep.wdtypes import Dict, List, Union, Tensor, Optional
 from pytorch_widedeep.utils.general_utils import alias
 
-
 class Metric(object):
     def __init__(self):
         self._name = ""
@@ -853,6 +852,71 @@ class CatalogueCoverage(Metric):
         print(f"We have {self.n_catalogue_categories} categories")
         print(f"THe result is {len(categories) / self.n_catalogue_categories}")
         return len(categories) / self.n_catalogue_categories
+
+class Coverage_at_K_Tensor(Metric):
+    """
+    Custom coverage metric. This metric expects to receive a tensor of probabilties 
+    with the shape (n_users, n_items). Then, it will
+    1. Retrieve the indices of the top k items for each user
+    2. Add them into a set
+    3. Calculate the coverage as len(set) / n_items
+    """
+
+    def __init__(self, k: int = 10):
+        super(Coverage_at_K_Tensor, self).__init__()
+        self.k = k
+
+    def __call__(self, tensor: Tensor) -> np.ndarray:
+        # Assert that the tensor is of shape (n_users, n_items and is a tensor)
+        assert isinstance(tensor, Tensor), "The tensor must be a tensor"
+        assert tensor.dim() == 2, "The tensor must be of shape (n_users, n_items)"
+
+        total_items = tensor.shape[1] 
+        # indices
+        top_k_indices = torch.topk(tensor, self.k, dim=1).indices
+        top_k_items = set(top_k_indices.flatten().tolist())
+        coverage = len(top_k_items) / total_items
+
+        return np.array(coverage)
+    
+class Diversity_at_K_Tensor(Metric):
+    """
+    Custom diversity metric. This metric expects to receive a 
+    1) tensor of probabilties with  shape (n_users, n_items)
+    2) OHE Encoded list for each item to handle multiple categories
+    3) total number of categories
+    
+    It calculates average diversity by 
+    1. Retrieve the indices of the top k items for each user
+    2. Retrieve categories of the top k items
+    3. Add the categories into a set for each user
+    4. Calculate individual diversity as len(set) / n_categories
+    5. Repeat for all users and calculate average diversity
+    """
+    def __init__(self, k: int = 10):
+        super(Diversity_at_K_Tensor, self).__init__()
+        self.k = k
+
+    def __call__(self, tensor: Tensor, items_categories: Tensor, n_categories: int) -> np.ndarray:
+        # Assert that the tensor is of shape (n_users, n_items and is a tensor)
+        assert isinstance(tensor, Tensor), "The tensor must be a tensor"
+        assert tensor.dim() == 2, "The tensor must be of shape (n_users, n_items)"
+        assert isinstance(items_categories, Tensor), "The categories list must be a tensor"
+        assert items_categories.shape[0] == tensor.shape[1], "Item categories must be the same size as the number of items"
+
+        total_items = tensor.shape[1] 
+        #indices
+        top_k_recommended_indices = torch.topk(tensor, self.k, dim=1).indices
+
+        top_k_categories = items_categories[top_k_recommended_indices]
+
+        unique_categories_per_user = (top_k_categories.sum(dim=1) > 0).float() 
+        diversity = unique_categories_per_user.sum(dim=1)
+
+        average_diversity_per_user = diversity / n_categories
+
+        return np.average(average_diversity_per_user)
+
 
 class Diversity(Metric):
     """
