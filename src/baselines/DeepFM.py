@@ -8,7 +8,7 @@ import torch
 from pytorch_widedeep import Trainer
 from pytorch_widedeep.models import Wide, WideDeep
 from pytorch_widedeep.metrics import Accuracy, NDCG_at_k, Coverage, CatalogueCoverage
-from pytorch_widedeep.datasets import load_movielens100k
+from pytorch_widedeep.datasets import load_movielens100k, load_custom_data
 from pytorch_widedeep.models.rec import (
     DeepFactorizationMachine,
     ExtremeDeepFactorizationMachine,
@@ -20,107 +20,146 @@ import os
 if __name__ == "__main__":
     MODEL_SAVE_PATH = "./saved_models"
     os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
+    pd.set_option('display.max_colwidth', None)
 
-    data, users, items = load_movielens100k(as_frame=True)
+    # data, users, items = load_movielens100k(as_frame=True)
+    # print("====DATA=====")
+    # print(data.head())
+    # print("====USERS=====")
+    # print(users.head())
+    # print("====ITEMS=====")
+    # print(items.head())
 
-    # for quick inference
-    subset = 1 # if we go below .3, it throws some error
-    data = data.head(int(len(data) * subset))
-    users = users.head(int(len(users) * subset))
-    items = items.head(int(len(items) * subset))
-    print(f"we have {len(data)} data points, {len(users)} users and {len(items)} items")
 
-    list_of_genres = [
-        "unknown",
-        "Action",
-        "Adventure",
-        "Animation",
-        "Children's",
-        "Comedy",
-        "Crime",
-        "Documentary",
-        "Drama",
-        "Fantasy",
-        "Film-Noir",
-        "Horror",
-        "Musical",
-        "Mystery",
-        "Romance",
-        "Sci-Fi",
-        "Thriller",
-        "War",
-        "Western",
-    ]
-
-    # useless assertion to avoid mypy warnings
-    assert (
-        isinstance(items, pd.DataFrame)
-        and isinstance(data, pd.DataFrame)
-        and isinstance(users, pd.DataFrame)
-    )
-    items["genre_list"] = items[list_of_genres].apply(
-        lambda x: [genre for genre in list_of_genres if x[genre] == 1], axis=1
-    )
-
-    # for each element in genre_list, all to lower case, remove non-alphanumeric
-    # characters, sort and join with an underscore
-    def clean_genre_list(genre_list):
-        return "_".join(
-            sorted([re.sub(r"[^a-z0-9]", "", genre.lower()) for genre in genre_list])
-        )
-
-    items["genre_list"] = items["genre_list"].apply(clean_genre_list)
-
-    df = pd.merge(data, users[["user_id", "age", "gender", "occupation"]], on="user_id")
-    df = pd.merge(df, items[["movie_id", "genre_list"]], on="movie_id")
-
-    # binarize the ratings.
-    df["rating"] = df["rating"].apply(lambda x: 1 if x >= 4 else 0)
-
-    # sort by timestamp, groupby user and keep the one before the last for val
-    # and the last 5 for test
-    # training set got all interacts but last 6, val is the 6th, test is the last 5
-    df = df.sort_values(by=["timestamp"])
-    train_df = df.groupby("user_id").apply(lambda x: x.iloc[:-6]).reset_index(drop=True)
-    val_df = df.groupby("user_id").apply(lambda x: x.iloc[-6]).reset_index(drop=True)
-    test_df = df.groupby("user_id").apply(lambda x: x.iloc[-5:]).reset_index(drop=True)
-    assert len(df) == len(train_df) + len(val_df) + len(test_df)
+    train_df, test_df = load_custom_data(as_frame=True, subset=0.05)
+    print("\n====DATA2=====")
+    print(train_df.head())
+    print(train_df.columns)
 
     cat_cols = [
         "user_id",
-        "movie_id",
-        "age",
-        "gender",
-        "occupation",
-        "genre_list",
+        "item_id",
+        "category",
+        "brand",
+        "rank_bin",
+        "popularity_bin"
     ]
+
+    list_of_categories = train_df["category"].unique() # genres instead of cat to match 
 
     tab_preprocessor = TabPreprocessor(cat_embed_cols=cat_cols, for_mf=True)
     X_tab_tr = tab_preprocessor.fit_transform(train_df)
-    X_tab_val = tab_preprocessor.transform(val_df)
+    X_tab_val = tab_preprocessor.fit_transform(test_df) # duplicate
     X_tab_te = tab_preprocessor.transform(test_df)
 
     wide_preprocessor = WidePreprocessor(wide_cols=cat_cols)
     X_wide_tr = wide_preprocessor.fit_transform(train_df)
-    X_wide_val = wide_preprocessor.transform(val_df)
+    X_wide_val = wide_preprocessor.fit_transform(test_df)# duplicate
     X_wide_te = wide_preprocessor.transform(test_df)
 
     cat_embed_input: List[Tuple[str, int]] = tab_preprocessor.cat_embed_input
+
+    print(f"Shape of train is {X_tab_tr.shape}")
+    # Ignore for now
+
+    # # for quick inference
+    # subset = 1 # if we go below .3, it throws some error
+    # data = data.head(int(len(data) * subset))
+    # users = users.head(int(len(users) * subset))
+    # items = items.head(int(len(items) * subset))
+    # print(f"we have {len(data)} data points, {len(users)} users and {len(items)} items")
+
+    # list_of_categories = [
+    #     "unknown",
+    #     "Action",
+    #     "Adventure",
+    #     "Animation",
+    #     "Children's",
+    #     "Comedy",
+    #     "Crime",
+    #     "Documentary",
+    #     "Drama",
+    #     "Fantasy",
+    #     "Film-Noir",
+    #     "Horror",
+    #     "Musical",
+    #     "Mystery",
+    #     "Romance",
+    #     "Sci-Fi",
+    #     "Thriller",
+    #     "War",
+    #     "Western",
+    # ]
+
+    # # useless assertion to avoid mypy warnings
+    # assert (
+    #     isinstance(items, pd.DataFrame)
+    #     and isinstance(data, pd.DataFrame)
+    #     and isinstance(users, pd.DataFrame)
+    # )
+    # items["genre_list"] = items[list_of_categories].apply(
+    #     lambda x: [genre for genre in list_of_categories if x[genre] == 1], axis=1
+    # )
+
+    # # for each element in genre_list, all to lower case, remove non-alphanumeric
+    # # characters, sort and join with an underscore
+    # def clean_genre_list(genre_list):
+    #     return "_".join(
+    #         sorted([re.sub(r"[^a-z0-9]", "", genre.lower()) for genre in genre_list])
+    #     )
+
+    # items["genre_list"] = items["genre_list"].apply(clean_genre_list)
+
+    # df = pd.merge(data, users[["user_id", "age", "gender", "occupation"]], on="user_id")
+    # df = pd.merge(df, items[["movie_id", "genre_list"]], on="movie_id")
+
+    # # binarize the ratings.
+    # df["rating"] = df["rating"].apply(lambda x: 1 if x >= 4 else 0)
+
+    # # sort by timestamp, groupby user and keep the one before the last for val
+    # # and the last 5 for test
+    # # training set got all interacts but last 6, val is the 6th, test is the last 5
+    # df = df.sort_values(by=["timestamp"])
+    # train_df = df.groupby("user_id").apply(lambda x: x.iloc[:-6]).reset_index(drop=True)
+    # val_df = df.groupby("user_id").apply(lambda x: x.iloc[-6]).reset_index(drop=True)
+    # test_df = df.groupby("user_id").apply(lambda x: x.iloc[-5:]).reset_index(drop=True)
+    # assert len(df) == len(train_df) + len(val_df) + len(test_df)
+
+    # cat_cols = [
+    #     "user_id",
+    #     "movie_id",
+    #     "age",
+    #     "gender",
+    #     "occupation",
+    #     "genre_list",
+    # ]
+
+    # tab_preprocessor = TabPreprocessor(cat_embed_cols=cat_cols, for_mf=True)
+    # X_tab_tr = tab_preprocessor.fit_transform(train_df)
+    # X_tab_val = tab_preprocessor.transform(val_df)
+    # X_tab_te = tab_preprocessor.transform(test_df)
+
+    # wide_preprocessor = WidePreprocessor(wide_cols=cat_cols)
+    # X_wide_tr = wide_preprocessor.fit_transform(train_df)
+    # X_wide_val = wide_preprocessor.transform(val_df)
+    # X_wide_te = wide_preprocessor.transform(test_df)
+
+    # cat_embed_input: List[Tuple[str, int]] = tab_preprocessor.cat_embed_input
 
     models = {
         "DeepFM": DeepFactorizationMachine(
             column_idx=tab_preprocessor.column_idx, num_factors=8,
             cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
         ),
-        "DeepFFM": DeepFieldAwareFactorizationMachine(
-            column_idx=tab_preprocessor.column_idx, num_factors=8,
-            cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
-        ),
-        "XDeepFM": ExtremeDeepFactorizationMachine(
-            column_idx=tab_preprocessor.column_idx, input_dim=16,
-            cat_embed_input=cat_embed_input, cin_layer_dims=[32, 16],
-            mlp_hidden_dims=[64, 32]
-        )
+        # "DeepFFM": DeepFieldAwareFactorizationMachine(
+        #     column_idx=tab_preprocessor.column_idx, num_factors=8,
+        #     cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
+        # ),
+        # "XDeepFM": ExtremeDeepFactorizationMachine(
+        #     column_idx=tab_preprocessor.column_idx, input_dim=16,
+        #     cat_embed_input=cat_embed_input, cin_layer_dims=[32, 16],
+        #     mlp_hidden_dims=[64, 32]
+        # )
     }
     wide = Wide(input_dim=X_tab_tr.max(), pred_dim=1)
 
@@ -128,9 +167,9 @@ if __name__ == "__main__":
     BATCH_SIZE = 32
     NUM_EPOCHS = 1
 
-    ndcg_metric = NDCG_at_k(k=5, n_cols=5)
-    catalogue_coverage_metric = CatalogueCoverage(n_catalogue_categories=len(list_of_genres))
-    coverage_metric = Coverage(n_items_catalog=1682)  # MovieLens100k has 1682 movies
+    # ndcg_metric = NDCG_at_k(k=5, n_cols=5) # means 5 items for all, might be wrong lol
+    catalogue_coverage_metric = CatalogueCoverage(n_catalogue_categories=len(list_of_categories))
+    # coverage_metric = Coverage(n_items_catalog=1682)  # MovieLens100k has 1682 movies
 
     for name, fm_model in models.items():
 
@@ -154,67 +193,54 @@ if __name__ == "__main__":
         X_train = {
             "X_wide": X_wide_tr,
             "X_tab": X_tab_tr,
-            "target": train_df["rating"].values,
+            "target": train_df["label"].values,
         }
+
         X_val = {
             "X_wide": X_wide_val,
             "X_tab": X_tab_val,
-            "target": val_df["rating"].values,
+            "target": test_df["label"].values,
         }
+
         X_test = {"X_wide": X_wide_te, "X_tab": X_tab_te}
 
         trainer.fit(X_train=X_train, X_val=X_val, n_epochs=NUM_EPOCHS)
         predictions = trainer.predict_proba(X_wide=X_wide_te, X_tab=X_tab_te)[:, 1]
-        ndcg_score = ndcg_metric(torch.tensor(predictions), torch.tensor(test_df["rating"].values))
 
+        # ndcg_score = ndcg_metric(torch.tensor(predictions), torch.tensor(test_df["label"].values))
+        
+        # ================= Calculating Coverage =================
+        threshold = 0.5
 
-        # (1410)
-
-        # TODO: Calculate coverage and diversity here
-        # coverage needs predicted score for all users
-        # input is (num_users, num_items) 
-        coverage_score = coverage_metric(torch.tensor(predictions))
-        print(f"The torch.tensor for predictions is shape {torch.tensor(predictions).shape}")
-        print(f"Inside the shape is {predictions[0]}")
-        # [p(category1), p(cat2)....]
-        # 1
-        print(f"Coverage: {coverage_score}, NDCG@5: {ndcg_score}")
-
-        # calculating coverage
-        def extract_genres(input:str):
-            """
-            Extracts individual genres from a string of genres
-            coming from the original cat data.
-            Input: comedy_romance
-            Output: ['comedy', 'romance']
-            """
-            return input.split("_")
+        positive_idx = predictions >= threshold 
 
         original_cat_data = tab_preprocessor.inverse_transform(X_tab_te)
-        # convert genres from comedy_animation to [comedy, animation]
-        genres = original_cat_data["genre_list"].apply(extract_genres)
-        # loop through all df and then get unique genres
-        unique_genres = set()
-        for genre in genres:
-            for g in genre:
-                unique_genres.add(g)
-        unique_genres = list(unique_genres)
+        recommended_rows = original_cat_data[positive_idx]
 
-        catalog_coverage_score = catalogue_coverage_metric(unique_genres)
-        
-        # calculate diversity information
-        # need to group by the user id, and get the total number of unique categories recommended
-        genre_summary = original_cat_data.groupby("user_id")["genre_list"].apply(
-            lambda x: set(genre for genre_str in x for genre in extract_genres(genre_str))
-        ).reset_index()
+        catalogue_coverage_metric = CatalogueCoverage(n_catalogue_categories=len(list_of_categories))
+        recommended_categories_set = set(recommended_rows["category"])
+        catalogue_coverage_score = catalogue_coverage_metric(recommended_categories_set)
 
-        genre_summary["num_unique_genres"] = genre_summary["genre_list"].apply(lambda x: len(x))
-        genre_summary["diversity"] = genre_summary["num_unique_genres"] / len(list_of_genres)
-        diversity = genre_summary["diversity"].mean()
+        # ================= Calculating Diversity =================
+
+        recommended_rows_grouped_by_user_id = recommended_rows.groupby("user_id")
+        print(recommended_rows_grouped_by_user_id.head())
+
+        # create set of categories for each user
+        user_category_sets = recommended_rows_grouped_by_user_id["category"].apply(set)
+
+        # calculate the number of unique genres for each user
+        user_unique_genres = user_category_sets.apply(len)
+
+        # calculate the diversity score for each user
+        user_diversity_scores = user_unique_genres / len(list_of_categories)
+
+        # calculate the average diversity score across all users
+        diversity = user_diversity_scores.mean()
 
         wandb.log({
-            "ndcg@5": ndcg_score,
-            "catalogue_coverage": catalog_coverage_score,
+            # "ndcg@5": ndcg_score,
+            "catalogue_coverage": catalogue_coverage_score,
             "diversity": diversity
         })
 
