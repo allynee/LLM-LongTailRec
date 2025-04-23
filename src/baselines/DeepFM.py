@@ -22,19 +22,9 @@ if __name__ == "__main__":
     os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
     pd.set_option('display.max_colwidth', None)
 
-    # data, users, items = load_movielens100k(as_frame=True)
-    # print("====DATA=====")
-    # print(data.head())
-    # print("====USERS=====")
-    # print(users.head())
-    # print("====ITEMS=====")
-    # print(items.head())
+  
 
-
-    train_df, test_df = load_custom_data(as_frame=True, subset=0.05)
-    print("\n====DATA2=====")
-    print(train_df.head())
-    print(train_df.columns)
+    train_df, val_df, test_df = load_custom_data(as_frame=True, subset=0.01)
 
     cat_cols = [
         "user_id",
@@ -49,102 +39,17 @@ if __name__ == "__main__":
 
     tab_preprocessor = TabPreprocessor(cat_embed_cols=cat_cols, for_mf=True)
     X_tab_tr = tab_preprocessor.fit_transform(train_df)
-    X_tab_val = tab_preprocessor.fit_transform(test_df) # duplicate
+    X_tab_val = tab_preprocessor.fit_transform(val_df) # duplicate
     X_tab_te = tab_preprocessor.transform(test_df)
 
     wide_preprocessor = WidePreprocessor(wide_cols=cat_cols)
     X_wide_tr = wide_preprocessor.fit_transform(train_df)
-    X_wide_val = wide_preprocessor.fit_transform(test_df)# duplicate
+    X_wide_val = wide_preprocessor.fit_transform(val_df)# duplicate
     X_wide_te = wide_preprocessor.transform(test_df)
 
     cat_embed_input: List[Tuple[str, int]] = tab_preprocessor.cat_embed_input
 
     print(f"Shape of train is {X_tab_tr.shape}")
-    # Ignore for now
-
-    # # for quick inference
-    # subset = 1 # if we go below .3, it throws some error
-    # data = data.head(int(len(data) * subset))
-    # users = users.head(int(len(users) * subset))
-    # items = items.head(int(len(items) * subset))
-    # print(f"we have {len(data)} data points, {len(users)} users and {len(items)} items")
-
-    # list_of_categories = [
-    #     "unknown",
-    #     "Action",
-    #     "Adventure",
-    #     "Animation",
-    #     "Children's",
-    #     "Comedy",
-    #     "Crime",
-    #     "Documentary",
-    #     "Drama",
-    #     "Fantasy",
-    #     "Film-Noir",
-    #     "Horror",
-    #     "Musical",
-    #     "Mystery",
-    #     "Romance",
-    #     "Sci-Fi",
-    #     "Thriller",
-    #     "War",
-    #     "Western",
-    # ]
-
-    # # useless assertion to avoid mypy warnings
-    # assert (
-    #     isinstance(items, pd.DataFrame)
-    #     and isinstance(data, pd.DataFrame)
-    #     and isinstance(users, pd.DataFrame)
-    # )
-    # items["genre_list"] = items[list_of_categories].apply(
-    #     lambda x: [genre for genre in list_of_categories if x[genre] == 1], axis=1
-    # )
-
-    # # for each element in genre_list, all to lower case, remove non-alphanumeric
-    # # characters, sort and join with an underscore
-    # def clean_genre_list(genre_list):
-    #     return "_".join(
-    #         sorted([re.sub(r"[^a-z0-9]", "", genre.lower()) for genre in genre_list])
-    #     )
-
-    # items["genre_list"] = items["genre_list"].apply(clean_genre_list)
-
-    # df = pd.merge(data, users[["user_id", "age", "gender", "occupation"]], on="user_id")
-    # df = pd.merge(df, items[["movie_id", "genre_list"]], on="movie_id")
-
-    # # binarize the ratings.
-    # df["rating"] = df["rating"].apply(lambda x: 1 if x >= 4 else 0)
-
-    # # sort by timestamp, groupby user and keep the one before the last for val
-    # # and the last 5 for test
-    # # training set got all interacts but last 6, val is the 6th, test is the last 5
-    # df = df.sort_values(by=["timestamp"])
-    # train_df = df.groupby("user_id").apply(lambda x: x.iloc[:-6]).reset_index(drop=True)
-    # val_df = df.groupby("user_id").apply(lambda x: x.iloc[-6]).reset_index(drop=True)
-    # test_df = df.groupby("user_id").apply(lambda x: x.iloc[-5:]).reset_index(drop=True)
-    # assert len(df) == len(train_df) + len(val_df) + len(test_df)
-
-    # cat_cols = [
-    #     "user_id",
-    #     "movie_id",
-    #     "age",
-    #     "gender",
-    #     "occupation",
-    #     "genre_list",
-    # ]
-
-    # tab_preprocessor = TabPreprocessor(cat_embed_cols=cat_cols, for_mf=True)
-    # X_tab_tr = tab_preprocessor.fit_transform(train_df)
-    # X_tab_val = tab_preprocessor.transform(val_df)
-    # X_tab_te = tab_preprocessor.transform(test_df)
-
-    # wide_preprocessor = WidePreprocessor(wide_cols=cat_cols)
-    # X_wide_tr = wide_preprocessor.fit_transform(train_df)
-    # X_wide_val = wide_preprocessor.transform(val_df)
-    # X_wide_te = wide_preprocessor.transform(test_df)
-
-    # cat_embed_input: List[Tuple[str, int]] = tab_preprocessor.cat_embed_input
 
     models = {
         "DeepFM": DeepFactorizationMachine(
@@ -207,39 +112,84 @@ if __name__ == "__main__":
         trainer.fit(X_train=X_train, X_val=X_val, n_epochs=NUM_EPOCHS)
         predictions = trainer.predict_proba(X_wide=X_wide_te, X_tab=X_tab_te)[:, 1]
 
+        # here, i have individual user ids : item id and probability
+        # i join the probability to the original one
+        # I get user id: item id : probaiblity
         # ndcg_score = ndcg_metric(torch.tensor(predictions), torch.tensor(test_df["label"].values))
         
         # ================= Calculating Coverage =================
-        threshold = 0.5
 
-        positive_idx = predictions >= threshold 
+        assert(len(predictions) == len(test_df), "Predictions and test_df must be equal and NOT SHUFFLED")
+        
+        joined_df = test_df
+        # Concate them together
+        joined_df["probability"] = predictions
+        print(joined_df.head())
 
-        original_cat_data = tab_preprocessor.inverse_transform(X_tab_te)
-        recommended_rows = original_cat_data[positive_idx]
+        # Coverage at K, NDCG at K, Diversity at K
+        K = 5
+
+        # Now, we group by user_id and get top k highest probability
+        # in the event of ties, they will still rank differently
+        recommended_rows = (joined_df.groupby("user_id")
+                        .apply(lambda x: x.nlargest(K, "probability")
+                                .assign(recommended_rank=lambda df: range(1, len(df) + 1)))
+                        .reset_index(drop=True))     
+        # # ================= Calculating Catalogue Coverage =================
 
         catalogue_coverage_metric = CatalogueCoverage(n_catalogue_categories=len(list_of_categories))
         recommended_categories_set = set(recommended_rows["category"])
         catalogue_coverage_score = catalogue_coverage_metric(recommended_categories_set)
 
-        # ================= Calculating Diversity =================
+        # # ================= Calculating Diversity =================
 
         recommended_rows_grouped_by_user_id = recommended_rows.groupby("user_id")
-        print(recommended_rows_grouped_by_user_id.head())
+        print("Recommended grouped by user id")
+        print(recommended_rows_grouped_by_user_id)
 
-        # create set of categories for each user
         user_category_sets = recommended_rows_grouped_by_user_id["category"].apply(set)
-
-        # calculate the number of unique genres for each user
+        print("User category sets")
+        print(user_category_sets)
         user_unique_genres = user_category_sets.apply(len)
-
-        # calculate the diversity score for each user
+        print(f"Length of cateogires is {len(list_of_categories)}")
         user_diversity_scores = user_unique_genres / len(list_of_categories)
-
-        # calculate the average diversity score across all users
+        print("User diversity scores")
+        print(user_diversity_scores)
         diversity = user_diversity_scores.mean()
+
+        # ================= Calculating Mean Reciprocal Rank =================  
+        # Find the columns with 1 in the label
+        # Divide 1 / recommended rank
+        def calculate_mrr(user_group):
+            # 1 / recommended rank, else 0
+            positive_items = user_group[user_group['label'] == 1]
+            
+            if len(positive_items) == 0:
+                return 0.0
+            
+            best_rank = positive_items['recommended_rank'].min()
+            
+            return 1.0 / best_rank if best_rank > 0 else 0.0
+        user_mrr_scores = recommended_rows.groupby('user_id').apply(calculate_mrr)
+        mean_mrr = user_mrr_scores.mean()
+
+        # recommended_rows_grouped_by_user_id = recommended_rows.groupby("user_id")
+
+        # # create set of categories for each user
+        # user_category_sets = recommended_rows_grouped_by_user_id["category"].apply(set)
+
+        # # calculate the number of unique genres for each user
+        # user_unique_genres = user_category_sets.apply(len)
+
+        # # calculate the diversity score for each user
+        # user_diversity_scores = user_unique_genres / len(list_of_categories)
+
+        # # calculate the average diversity score across all users
+        # diversity = user_diversity_scores.mean()
 
         wandb.log({
             # "ndcg@5": ndcg_score,
+            "mrr": mean_mrr,
             "catalogue_coverage": catalogue_coverage_score,
             "diversity": diversity
         })

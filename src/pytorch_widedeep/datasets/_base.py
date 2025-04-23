@@ -372,3 +372,34 @@ def load_movielens100k(
             df_items.to_numpy(),
         )
     )
+
+def load_custom_data(
+    as_frame: bool = False,
+    subset : float = 1
+) -> Union[
+    Tuple[npt.NDArray[np.int64], npt.NDArray[np.object_], npt.NDArray[np.object_]],
+    Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame],
+]:
+    with resources.path(
+        "pytorch_widedeep.datasets.custom_data",
+        "train.parquet"
+    ) as fpath:
+        train_df = pd.read_parquet(fpath)
+
+    with resources.path(
+        "pytorch_widedeep.datasets.custom_data",
+        "test.parquet"
+    ) as fpath:
+        test_df = pd.read_parquet(fpath)
+
+        
+    train_df_subset_size = int(train_df.shape[0] * subset)
+    test_df_subset_size = int(test_df.shape[0] * subset)
+
+    train_df = train_df[:train_df_subset_size]
+    test_df = test_df[:test_df_subset_size]
+    return (
+        (train_df, test_df)
+        if as_frame
+        else (train_df.to_numpy(), test_df.to_numpy())
+    )
