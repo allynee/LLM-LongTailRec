@@ -392,14 +392,23 @@ def load_custom_data(
     ) as fpath:
         test_df = pd.read_parquet(fpath)
 
+    with resources.path(
+        "pytorch_widedeep.datasets.custom_data",
+        "val.parquet"
+    ) as fpath:
+        val_df = pd.read_parquet(fpath)
+
         
     train_df_subset_size = int(train_df.shape[0] * subset)
     test_df_subset_size = int(test_df.shape[0] * subset)
+    val_df_subset_size = int(val_df.shape[0] * subset)
 
     train_df = train_df[:train_df_subset_size]
     test_df = test_df[:test_df_subset_size]
+    val_df = val_df[:val_df_subset_size]
+    
     return (
-        (train_df, test_df)
+        (train_df, val_df, test_df)
         if as_frame
         else (train_df.to_numpy(), test_df.to_numpy())
     )

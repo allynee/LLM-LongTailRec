@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
   
 
-    train_df, val_df, test_df = load_custom_data(as_frame=True, subset=0.01)
+    train_df, val_df, test_df = load_custom_data(as_frame=True, subset=1)
 
     cat_cols = [
         "user_id",
@@ -49,22 +49,20 @@ if __name__ == "__main__":
 
     cat_embed_input: List[Tuple[str, int]] = tab_preprocessor.cat_embed_input
 
-    print(f"Shape of train is {X_tab_tr.shape}")
-
     models = {
         "DeepFM": DeepFactorizationMachine(
             column_idx=tab_preprocessor.column_idx, num_factors=8,
             cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
         ),
-        # "DeepFFM": DeepFieldAwareFactorizationMachine(
-        #     column_idx=tab_preprocessor.column_idx, num_factors=8,
-        #     cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
-        # ),
-        # "XDeepFM": ExtremeDeepFactorizationMachine(
-        #     column_idx=tab_preprocessor.column_idx, input_dim=16,
-        #     cat_embed_input=cat_embed_input, cin_layer_dims=[32, 16],
-        #     mlp_hidden_dims=[64, 32]
-        # )
+        "DeepFFM": DeepFieldAwareFactorizationMachine(
+            column_idx=tab_preprocessor.column_idx, num_factors=8,
+            cat_embed_input=cat_embed_input, mlp_hidden_dims=[64, 32]
+        ),
+        "XDeepFM": ExtremeDeepFactorizationMachine(
+            column_idx=tab_preprocessor.column_idx, input_dim=16,
+            cat_embed_input=cat_embed_input, cin_layer_dims=[32, 16],
+            mlp_hidden_dims=[64, 32]
+        )
     }
     wide = Wide(input_dim=X_tab_tr.max(), pred_dim=1)
 
@@ -78,7 +76,8 @@ if __name__ == "__main__":
 
     for name, fm_model in models.items():
 
-        wandb.init(project="idl-proj", name=f"{name}_MovieLens100k")
+        wandb.init(project="idl-proj-actual-training", name=f"{name}_MovieLens100k")
+        # wandb.init(project="idl-proj", name=f"{name}_MovieLens100k")
         wandb.config.update({
             "num_factors": 8,
             "mlp_hidden_dims": [64, 32],
@@ -124,7 +123,6 @@ if __name__ == "__main__":
         joined_df = test_df
         # Concate them together
         joined_df["probability"] = predictions
-        print(joined_df.head())
 
         # Coverage at K, NDCG at K, Diversity at K
         K = 5
@@ -141,21 +139,27 @@ if __name__ == "__main__":
         recommended_categories_set = set(recommended_rows["category"])
         catalogue_coverage_score = catalogue_coverage_metric(recommended_categories_set)
 
-        # # ================= Calculating Diversity =================
+        # # ================= Calculating Diversity (no of categories recommended / all categories) =================
 
         recommended_rows_grouped_by_user_id = recommended_rows.groupby("user_id")
-        print("Recommended grouped by user id")
-        print(recommended_rows_grouped_by_user_id)
-
         user_category_sets = recommended_rows_grouped_by_user_id["category"].apply(set)
-        print("User category sets")
-        print(user_category_sets)
         user_unique_genres = user_category_sets.apply(len)
-        print(f"Length of cateogires is {len(list_of_categories)}")
+
         user_diversity_scores = user_unique_genres / len(list_of_categories)
-        print("User diversity scores")
-        print(user_diversity_scores)
         diversity = user_diversity_scores.mean()
+
+        # # ================= Calculating Diversity (sum of rank bins ) =================
+        # Rank bins : 1 (most popular), 10 (least popular)
+        # [NaN, '8', '3', '9', '7', ..., '1', '2', '6', '10', '4']
+        # Making NaN 10, not sure if this is intended
+        recommended_rows["rank_bin_numeric"] = recommended_rows["rank_bin"].astype(str)
+        recommended_rows["rank_bin_numeric"] = recommended_rows["rank_bin_numeric"].apply(
+            lambda x: 20 if pd.isna(x) or x == 'nan' else int(x)
+        )
+        recommended_rows_grouped_by_user_id = recommended_rows.groupby("user_id")
+        user_ranked_bin_avg = recommended_rows_grouped_by_user_id["rank_bin_numeric"].mean()
+
+        rank_bin_avg_avg = user_ranked_bin_avg.mean()
 
         # ================= Calculating Mean Reciprocal Rank =================  
         # Find the columns with 1 in the label
@@ -173,26 +177,16 @@ if __name__ == "__main__":
         user_mrr_scores = recommended_rows.groupby('user_id').apply(calculate_mrr)
         mean_mrr = user_mrr_scores.mean()
 
-        # recommended_rows_grouped_by_user_id = recommended_rows.groupby("user_id")
-
-        # # create set of categories for each user
-        # user_category_sets = recommended_rows_grouped_by_user_id["category"].apply(set)
-
-        # # calculate the number of unique genres for each user
-        # user_unique_genres = user_category_sets.apply(len)
-
-        # # calculate the diversity score for each user
-        # user_diversity_scores = user_unique_genres / len(list_of_categories)
-
-        # # calculate the average diversity score across all users
-        # diversity = user_diversity_scores.mean()
-
         wandb.log({
             # "ndcg@5": ndcg_score,
             "mrr": mean_mrr,
             "catalogue_coverage": catalogue_coverage_score,
-            "diversity": diversity
+            "diversity": diversity,
+            "rank_bin_avg(diversity)": rank_bin_avg_avg # Lower number is better
         })
+
+        print(f"Diversity will be of {K} / {len(list_of_categories)} = {K / len(list_of_categories)}")
+        print("A lower rank_bin_avg(diversity) is indicates more popular items are recommended.")
 
         model_path = os.path.join(MODEL_SAVE_PATH, f"{name}_model.pth")
         torch.save(fm_model.state_dict(), model_path)
