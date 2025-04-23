@@ -118,14 +118,13 @@ if __name__ == "__main__":
         
         # ================= Calculating Coverage =================
 
-        assert(len(predictions) == len(test_df), "Predictions and test_df must be equal and NOT SHUFFLED")
-        
+        assert(len(predictions) == len(test_df))
         joined_df = test_df
         # Concate them together
         joined_df["probability"] = predictions
 
         # Coverage at K, NDCG at K, Diversity at K
-        K = 5
+        K = 10
 
         # Now, we group by user_id and get top k highest probability
         # in the event of ties, they will still rank differently
@@ -177,12 +176,17 @@ if __name__ == "__main__":
         user_mrr_scores = recommended_rows.groupby('user_id').apply(calculate_mrr)
         mean_mrr = user_mrr_scores.mean()
 
+        # number of not zeros
+        users_with_recommended_in_top_k = user_mrr_scores[user_mrr_scores != 0].count()
+        percentage_users_with_recommended_in_top_k = users_with_recommended_in_top_k / len(user_mrr_scores)
+
         wandb.log({
             # "ndcg@5": ndcg_score,
             "mrr": mean_mrr,
             "catalogue_coverage": catalogue_coverage_score,
             "diversity": diversity,
-            "rank_bin_avg(diversity)": rank_bin_avg_avg # Lower number is better
+            "rank_bin_avg(diversity)": rank_bin_avg_avg, # Lower number is better
+            "percentage_users_with_recommended_in_top_k": percentage_users_with_recommended_in_top_k
         })
 
         print(f"Diversity will be of {K} / {len(list_of_categories)} = {K / len(list_of_categories)}")

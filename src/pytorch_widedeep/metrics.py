@@ -848,9 +848,6 @@ class CatalogueCoverage(Metric):
         self.n_catalogue_categories = n_catalogue_categories
 
     def __call__(self, categories:Set):
-        print(f"The categories are {categories}")
-        print(f"We have {self.n_catalogue_categories} categories")
-        print(f"THe result is {len(categories) / self.n_catalogue_categories}")
         return len(categories) / self.n_catalogue_categories
 
 class Coverage_at_K_Tensor(Metric):
