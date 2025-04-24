@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
   
 
-    train_df, val_df, test_df = load_custom_data(as_frame=True, subset=1)
+    train_df, val_df, test_df = load_custom_data(as_frame=True, subset=0.01)
 
     cat_cols = [
         "user_id",
@@ -35,7 +35,8 @@ if __name__ == "__main__":
         "popularity_bin"
     ]
 
-    list_of_categories = train_df["category"].unique() # genres instead of cat to match 
+    no_of_unique_users_test = len(test_df["user_id"].unique())
+    list_of_categories = test_df["category"].unique() # genres instead of cat to match 
 
     tab_preprocessor = TabPreprocessor(cat_embed_cols=cat_cols, for_mf=True)
     X_tab_tr = tab_preprocessor.fit_transform(train_df)
@@ -161,6 +162,13 @@ if __name__ == "__main__":
         rank_bin_avg_avg = user_ranked_bin_avg.mean()
 
         # ================= Calculating Mean Reciprocal Rank =================  
+        # This is supposed to take a look at the top k items recommended to each user
+        # It identifies if there is an item in there with the label == 1 (positive item)
+        # If there is, it takes the ranking of the probability of this item 
+        # relative to all items recommended. Eg the positive item has the 2nd highest probability
+        # It calculates MRR by doing 1/rank, in this case 2
+        # If there is no item with label == 1, it returns 0
+
         # Find the columns with 1 in the label
         # Divide 1 / recommended rank
         def calculate_mrr(user_group):
@@ -173,12 +181,14 @@ if __name__ == "__main__":
             best_rank = positive_items['recommended_rank'].min()
             
             return 1.0 / best_rank if best_rank > 0 else 0.0
+        
         user_mrr_scores = recommended_rows.groupby('user_id').apply(calculate_mrr)
         mean_mrr = user_mrr_scores.mean()
 
         # number of not zeros
         users_with_recommended_in_top_k = user_mrr_scores[user_mrr_scores != 0].count()
-        percentage_users_with_recommended_in_top_k = users_with_recommended_in_top_k / len(user_mrr_scores)
+        percentage_users_with_recommended_in_top_k = users_with_recommended_in_top_k / no_of_unique_users_test
+
 
         wandb.log({
             # "ndcg@5": ndcg_score,
