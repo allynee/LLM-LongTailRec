@@ -82,3 +82,49 @@ wandb:              train_loss 0.47885
 wandb:            val_accuracy 0.0392
 wandb:                val_loss 5.39595
 ================================================================================
+
+K = 10
+
+DeepFM
+
+================================================================================
+wandb:                         catalogue_coverage 1
+wandb:                                  diversity 0.06665
+wandb:                                        mrr 0.08656
+wandb: percentage_users_with_recommended_in_top_k 0.11469
+wandb:                    rank_bin_avg(diversity) 4.25488
+wandb:                             train_accuracy 0.75422
+wandb:                                 train_loss 0.56684
+wandb:                               val_accuracy 0.48027
+wandb:                                   val_loss 4.95937
+================================================================================
+
+DeepFFM
+
+================================================================================
+wandb: Run summary:
+wandb:                         catalogue_coverage 0.98039
+wandb:                                  diversity 0.06227
+wandb:                                        mrr 0.07483
+wandb: percentage_users_with_recommended_in_top_k 0.19871
+wandb:                    rank_bin_avg(diversity) 4.40326
+wandb:                             train_accuracy 0.78217
+wandb:                                 train_loss 0.48119
+wandb:                               val_accuracy 0.00936
+wandb:                                   val_loss 4.7121
+================================================================================
+
+XDeepFM
+
+================================================================================
+wandb: Run summary:
+wandb:                         catalogue_coverage 0.98039
+wandb:                                  diversity 0.06335
+wandb:                                        mrr 0.04777
+wandb: percentage_users_with_recommended_in_top_k 0.11798
+wandb:                    rank_bin_avg(diversity) 4.36011
+wandb:                             train_accuracy 0.78357
+wandb:                                 train_loss 0.47928
+wandb:                               val_accuracy 0.00949
+wandb:                                   val_loss 5.71598
+================================================================================
