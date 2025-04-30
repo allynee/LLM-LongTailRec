@@ -37,7 +37,7 @@ def convert_column_names_to_index(input:str):
     else:
         return int(input[3:]) + 1
     
-def parse_user_and_item_ids(filename:str):
+def parse_user_and_item_ids(filename:str, SELECTED_CANDIDATES:int):
     """
     This parses and extracts only last 101 ids for each user
     """
@@ -69,12 +69,13 @@ def parse_user_and_item_ids(filename:str):
 
         for i in range(len(item_ids)):
             curr_item_ids = item_ids[i]
-            if len(curr_item_ids) < 101:
+            if len(curr_item_ids) < TOTAL_CANDIDATES:
                 lesser_than += 1
                 idxs_to_remove.append(i)
-            elif len(curr_item_ids) > 101:
+            elif len(curr_item_ids) > TOTAL_CANDIDATES:
                 greater_than += 1
-            item_ids[i] = item_ids[i][-101:]
+            item_ids[i] = item_ids[i][-TOTAL_CANDIDATES:]
+            item_ids[i] = item_ids[i][:SELECTED_CANDIDATES]
 
         # delete all the idxs to remove WITHOUT FUCKING UP THE ORDER
         for i in sorted(idxs_to_remove, reverse=True): # do it in reverse
@@ -83,8 +84,10 @@ def parse_user_and_item_ids(filename:str):
 
 
 if __name__ == "__main__":
-    FILE = os.path.join(os.getcwd(), "pytorch_widedeep", "results", "101_probabilities.csv")
+    FILE = os.path.join(os.getcwd(), "pytorch_widedeep", "results", "71_probabilities.csv")
     K = 10
+    TOTAL_CANDIDATES = 101
+    SELECTED_CANDIDATES = 71
 
     # Test code to ensure things work
     # test_tensor = torch.rand(2, 10)
@@ -135,7 +138,7 @@ if __name__ == "__main__":
     # List of lists [ [101 item ids for user 1], [101 item ids for user 2] ... ]
 
     TEXT_FILENAME = os.path.join(os.getcwd(), "pytorch_widedeep", "results", "final_test_data_with_negatives.txt")
-    user_items_id = parse_user_and_item_ids(TEXT_FILENAME)
+    user_items_id = parse_user_and_item_ids(TEXT_FILENAME, SELECTED_CANDIDATES)
 
     # From top_k_ordered_df, for each user 
     top_k_item_indexes = []

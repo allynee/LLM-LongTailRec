@@ -4,6 +4,8 @@ from typing import List, Tuple
 import pandas as pd
 import wandb
 import torch
+import joblib
+
 
 from pytorch_widedeep import Trainer
 from pytorch_widedeep.models import Wide, WideDeep
@@ -22,18 +24,17 @@ if __name__ == "__main__":
     os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
     pd.set_option('display.max_colwidth', None)
 
-  
-
-    train_df, val_df, test_df = load_custom_data(as_frame=True, subset=0.01)
+    train_df, val_df, test_df = load_custom_data(as_frame=True, subset=1)
 
     cat_cols = [
         "user_id",
         "item_id",
-        "category",
-        "brand",
-        "rank_bin",
-        "popularity_bin"
+        # "category",
+        # "brand",
+        # "rank_bin",
+        # "popularity_bin"
     ]
+    # train with user and item id and try
 
     no_of_unique_users_test = len(test_df["user_id"].unique())
     list_of_categories = test_df["category"].unique() # genres instead of cat to match 
@@ -68,8 +69,8 @@ if __name__ == "__main__":
     wide = Wide(input_dim=X_tab_tr.max(), pred_dim=1)
 
     # config
-    BATCH_SIZE = 32
-    NUM_EPOCHS = 1
+    BATCH_SIZE = 1024
+    NUM_EPOCHS = 10
 
     # ndcg_metric = NDCG_at_k(k=5, n_cols=5) # means 5 items for all, might be wrong lol
     catalogue_coverage_metric = CatalogueCoverage(n_catalogue_categories=len(list_of_categories))
@@ -77,7 +78,7 @@ if __name__ == "__main__":
 
     for name, fm_model in models.items():
 
-        wandb.init(project="idl-proj-actual-training", name=f"{name}_MovieLens100k")
+        wandb.init(project="idl-proj-actual-training", name=f"{name}_MovieLens100k_with_user_id_and_item_id_only")
         # wandb.init(project="idl-proj", name=f"{name}_MovieLens100k")
         wandb.config.update({
             "num_factors": 8,
@@ -207,3 +208,16 @@ if __name__ == "__main__":
         print(f"Model {name} saved at {model_path}")
 
         wandb.finish()
+        
+        recommended_output_path = os.path.join(MODEL_SAVE_PATH, f"{name}_recommended_top{K}.csv")
+        recommended_rows.to_csv(recommended_output_path, index=False)
+        print(f"Top-{K} recommendations saved to {recommended_output_path}")
+        # Save model
+        model_path = os.path.join(MODEL_SAVE_PATH, f"{name}_model.pth")
+        torch.save(fm_model.state_dict(), model_path)
+
+        # Save preprocessors
+        joblib.dump(tab_preprocessor, os.path.join(MODEL_SAVE_PATH, f"{name}_tab_preprocessor.pkl"))
+        joblib.dump(wide_preprocessor, os.path.join(MODEL_SAVE_PATH, f"{name}_wide_preprocessor.pkl"))
+
+        print(f"Model and preprocessors for {name} saved at {MODEL_SAVE_PATH}")

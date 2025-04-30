@@ -7,7 +7,8 @@ from ._base import (
     load_movielens100k,
     load_womens_ecommerce,
     load_california_housing,
-    load_custom_data
+    load_custom_data,
+    load_item_data
 )
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "load_rf1",
     "load_womens_ecommerce",
     "load_movielens100k",
-    "load_custom_data"
+    "load_custom_data",
+    "load_item_data"
 ]

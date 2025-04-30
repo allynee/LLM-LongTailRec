@@ -412,3 +412,24 @@ def load_custom_data(
         if as_frame
         else (train_df.to_numpy(), test_df.to_numpy())
     )
+
+
+def load_item_data(
+    as_frame: bool = False,
+    subset : float = 1
+) -> Union[
+    Tuple[npt.NDArray[np.int64], npt.NDArray[np.object_], npt.NDArray[np.object_]],
+    Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame],
+]:
+    with resources.path(
+        "pytorch_widedeep.datasets.custom_data",
+        "item_metadata.parquet"
+    ) as fpath:
+        item_meta_data = pd.read_parquet(fpath)
+
+
+    return (
+        (item_meta_data)
+        if as_frame
+        else (None)
+    )

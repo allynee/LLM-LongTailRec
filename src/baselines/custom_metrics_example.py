@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     # Testing coverage for a random tensor
     tensor = torch.rand(NO_OF_USERS, NO_OF_ITEMS)
-
+# 
     coverage = Coverage_at_K_Tensor(k=10)
     coverage_score = coverage(tensor)
     print("Coverage score for random tensor(should be quite high): ", coverage_score)
@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     items_categories = (torch.rand(NO_OF_ITEMS, NO_OF_CATEGORIES) < PROB_PER_CATEGORY).float()
     
-    # Ensure at least one category per item
+    # Ensure at least one cat`egory per item
     items_categories[items_categories.sum(1) == 0] = torch.tensor([1.]+[0.]*(NO_OF_CATEGORIES-1))
     print(f"Shape of items_categories should be {NO_OF_ITEMS} x {NO_OF_CATEGORIES}: {items_categories.shape}")
 

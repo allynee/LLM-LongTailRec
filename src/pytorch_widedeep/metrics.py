@@ -889,6 +889,10 @@ class Diversity_at_K_Tensor(Metric):
     3. Add the categories into a set for each user
     4. Calculate individual diversity as len(set) / n_categories
     5. Repeat for all users and calculate average diversity
+
+
+    # No longer OHE encoded list for categories, handling single categories
+
     """
     def __init__(self, k: int = 10):
         super(Diversity_at_K_Tensor, self).__init__()
@@ -901,10 +905,15 @@ class Diversity_at_K_Tensor(Metric):
         assert isinstance(items_categories, Tensor), "The categories list must be a tensor"
         assert items_categories.shape[0] == tensor.shape[1], "Item categories must be the same size as the number of items"
 
-        total_items = tensor.shape[1] 
+        n_users, total_items = tensor.shape
         #indices
         top_k_recommended_indices = torch.topk(tensor, self.k, dim=1).indices
-
+        no_of_unique_categories = torch.unique(items_categories, dim=0).shape[0]
+        # for user_indx in range(n_users):
+        #     user_top_k_recommended_indices = top_k_recommended_indices[user_indx]
+        #     user_top_k_categories = items_categories[user_top_k_recommended_indices]
+        #     unique_categories = torch.unique(user_top_k_categories, dim=0)
+        #     user_diversity = 
         top_k_categories = items_categories[top_k_recommended_indices]
 
         unique_categories_per_user = (top_k_categories.sum(dim=1) > 0).float() 
