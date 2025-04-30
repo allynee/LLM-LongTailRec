@@ -1,5 +1,5 @@
 from pytorch_widedeep.metrics import Coverage_at_K_Tensor, Diversity_at_K_Tensor
-from pytorch_widedeep.datasets import load_custom_data
+from pytorch_widedeep.datasets import load_custom_data, load_item_data
 
 import torch
 import gzip
@@ -107,6 +107,7 @@ if __name__ == "__main__":
     print(top_k_ordered_df.head()) #I just want top k items
 
     # ============================ Calculating hit rate (Start)============================
+    # Calculate mean recriprocal rank
     # Using top_k_ordered_df_head to calculate hit rate
     # it is a hit if there is a 0 for the user (0 = positive item)
     top_k_ordered_df["min"] = top_k_ordered_df.min(axis=1)
@@ -115,30 +116,19 @@ if __name__ == "__main__":
     # Get sum of hits for all user
     sum_hr = top_k_ordered_df["hit"].sum()
     print(f"There are {sum_hr} hits and the % is {sum_hr / len(top_k_ordered_df) * 100} in the top {K} recommendations for all users.")
+    # remove the hit and min to avoid it
+    top_k_ordered_df = top_k_ordered_df.drop(["hit", "min"], axis=1)
     # ============================ Calculating hit rate (End) ============================
 
     # Take bottom 101 item ids for each user
     # List of lists [ [101 item ids for user 1], [101 item ids for user 2] ... ]
-    GZ_FILE = os.path.join(os.getcwd(), "pytorch_widedeep", "datasets", "custom_data_2", "amazon_movies_tv_17_Apr_dict.json.gz")
-    with gzip.open(GZ_FILE, 'rb') as f:
-        AMAZON_ITEM_DATA = pickle.load(f)
+
     TEXT_FILENAME = os.path.join(os.getcwd(), "pytorch_widedeep", "results", "final_test_data_with_negatives.txt")
     user_items_id = parse_user_and_item_ids(TEXT_FILENAME)
 
     # From top_k_ordered_df, for each user 
-
     top_k_item_indexes = []
-    # def convert_relative_idx_to_item_ids(row, user_items_id):
-    #     print("Helllo x2")
-    #     row_id = row.name
-    #     row_values = row.values
-    #     print(row_id, row_values)
-    #     actual_item_ids = []
-    #     if row_id < len(user_items_id): # proxy fix
-    #         user_item_ids = user_items_id[row_id] # index into that one
-    #         for idx in row_values:
-    #             actual_item_ids.append(user_item_ids[idx])
-        
+
     def convert_relative_idx_to_item_ids(row, user_items_id):
         row_id = row.name
         # print(f"Looking at row id {row_id}")
@@ -149,14 +139,44 @@ if __name__ == "__main__":
             return [None] * len(row_values)  # or raise error / skip
 
         user_item_ids = user_items_id[row_id]
-        # print(user_item_ids)
-        # print(len(user_item_ids))
         return [user_item_ids[idx] for idx in row_values]
     
     print(top_k_ordered_df.head(1))
     converted_df = top_k_ordered_df.apply(lambda row: convert_relative_idx_to_item_ids(row, user_items_id), axis=1, result_type='expand')
     print(converted_df.head())
 
-    
+    # ============================ Calculating category coverage and diversity (Start) ============================
+    item_data = load_item_data(as_frame=True)
+    print(type(item_data))
+    print(item_data.columns)
 
+    # create dict mapping of item id to category
+    item_to_category = {}
+    for index, row in item_data.iterrows():
+        item_to_category[row["item_id"]] = row["category"]
+
+    def item_id_to_category(item_id):
+        if item_id in item_to_category:
+            return item_to_category[item_id]
+        else:
+            return "others"
+    # i want to apply the above function
+    converted_df_to_category = converted_df.applymap(item_id_to_category)
+    print(converted_df_to_category.head())
+
+    def no_of_unique_categories_per_row(row):
+        return len(set(row))
+    converted_df_to_category["no_of_unique_categories"] = converted_df_to_category.apply(no_of_unique_categories_per_row, axis=1)
+    converted_df_to_category["diversity"] = converted_df_to_category["no_of_unique_categories"] / 102
+
+
+    print(f"Diversity is {converted_df_to_category['diversity'].mean()}")
+
+    # Get all unique categories
+    unique_categories = set()
+    for index, row in item_data.iterrows():
+        unique_categories.add(row["category"])
+    coverage = len(unique_categories) / 102
+    print(f"Coverage is {coverage}")
+    # ============================ Calculating category coverage and diversity (End) ============================
 
