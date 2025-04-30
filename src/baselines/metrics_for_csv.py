@@ -79,7 +79,6 @@ def parse_user_and_item_ids(filename:str):
         # delete all the idxs to remove WITHOUT FUCKING UP THE ORDER
         for i in sorted(idxs_to_remove, reverse=True): # do it in reverse
             del item_ids[i]
-    print(f"There ae {len(unique_user_ids)} unique users")
     return item_ids
 
 
@@ -96,28 +95,40 @@ if __name__ == "__main__":
     # print(ordered_df.applymap(convert_column_names_to_index))
     
     df = pd.read_csv(FILE)
-    print(f"OG DF shape is {df.shape}")
     ordered_df = get_sorted_column_names(df)
-    print(df.head(1))
 
-    print(ordered_df.head(1))
     ordered_df = ordered_df.applymap(convert_column_names_to_index)
     top_k_ordered_df = ordered_df.iloc[:, :K]  
-    print(top_k_ordered_df.shape)
-    print(top_k_ordered_df.head()) #I just want top k items
 
     # ============================ Calculating hit rate (Start)============================
     # Calculate mean recriprocal rank
     # Using top_k_ordered_df_head to calculate hit rate
     # it is a hit if there is a 0 for the user (0 = positive item)
+    mask = top_k_ordered_df == 0
+    top_k_ordered_df["first_hit_position"] = mask.values.argmax(axis=1)
+    top_k_ordered_df.loc[~mask.any(axis=1), "first_hit_position"] = -1
+    def get_mrr(row):
+        if row["first_hit_position"] == -1:
+            return 0
+        else:
+            return 1 / (row["first_hit_position"] + 1)
+        
+    top_k_ordered_df["mrr"] = top_k_ordered_df.apply(get_mrr, axis=1)
+
+    AVG_MRR = top_k_ordered_df["mrr"].mean()
+
+    # Hit rate
     top_k_ordered_df["min"] = top_k_ordered_df.min(axis=1)
     top_k_ordered_df["hit"] = top_k_ordered_df["min"] == 0
     top_k_ordered_df["hit"] = top_k_ordered_df["hit"].astype(int)
     # Get sum of hits for all user
     sum_hr = top_k_ordered_df["hit"].sum()
-    print(f"There are {sum_hr} hits and the % is {sum_hr / len(top_k_ordered_df) * 100} in the top {K} recommendations for all users.")
-    # remove the hit and min to avoid it
-    top_k_ordered_df = top_k_ordered_df.drop(["hit", "min"], axis=1)
+    HIT_RATE = sum_hr / len(top_k_ordered_df)
+    # remove the hit and min to avoid it fking up later
+    # ============================ Calculating MRR rate (End) ============================
+
+
+    top_k_ordered_df = top_k_ordered_df.drop(["hit", "min", "first_hit_position", "mrr"], axis=1)
     # ============================ Calculating hit rate (End) ============================
 
     # Take bottom 101 item ids for each user
@@ -131,24 +142,17 @@ if __name__ == "__main__":
 
     def convert_relative_idx_to_item_ids(row, user_items_id):
         row_id = row.name
-        # print(f"Looking at row id {row_id}")
         row_values = row.values  # make sure they're ints
-        # print("Row Values:")
-        # print(row_values)
         if row_id >= len(user_items_id):
             return [None] * len(row_values)  # or raise error / skip
 
         user_item_ids = user_items_id[row_id]
         return [user_item_ids[idx] for idx in row_values]
     
-    print(top_k_ordered_df.head(1))
     converted_df = top_k_ordered_df.apply(lambda row: convert_relative_idx_to_item_ids(row, user_items_id), axis=1, result_type='expand')
-    print(converted_df.head())
 
     # ============================ Calculating category coverage and diversity (Start) ============================
     item_data = load_item_data(as_frame=True)
-    print(type(item_data))
-    print(item_data.columns)
 
     # create dict mapping of item id to category
     item_to_category = {}
@@ -162,21 +166,24 @@ if __name__ == "__main__":
             return "others"
     # i want to apply the above function
     converted_df_to_category = converted_df.applymap(item_id_to_category)
-    print(converted_df_to_category.head())
 
     def no_of_unique_categories_per_row(row):
         return len(set(row))
     converted_df_to_category["no_of_unique_categories"] = converted_df_to_category.apply(no_of_unique_categories_per_row, axis=1)
     converted_df_to_category["diversity"] = converted_df_to_category["no_of_unique_categories"] / 102
 
-
-    print(f"Diversity is {converted_df_to_category['diversity'].mean()}")
-
+    DIVERSITY = converted_df_to_category["diversity"].mean()
+    
     # Get all unique categories
     unique_categories = set()
     for index, row in item_data.iterrows():
         unique_categories.add(row["category"])
-    coverage = len(unique_categories) / 102
-    print(f"Coverage is {coverage}")
+    COVERAGE = len(unique_categories) / 102
     # ============================ Calculating category coverage and diversity (End) ============================
 
+
+    # ==== PRINT METRICS ====
+    print(f"Coverage at {K}: {COVERAGE}")
+    print(f"Diversity at {K}: {DIVERSITY}")
+    print(f"Hit Rate at {K}: {HIT_RATE}")
+    print(f"MRR at {K}: {AVG_MRR}")
