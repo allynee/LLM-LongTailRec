@@ -156,24 +156,36 @@ if __name__ == "__main__":
 
     # create dict mapping of item id to category
     item_to_category = {}
+    item_to_ranked_bin = {}
     for index, row in item_data.iterrows():
         item_to_category[row["item_id"]] = row["category"]
+        item_to_ranked_bin[row["item_id"]] = row["rank_bin"]
 
     def item_id_to_category(item_id):
         if item_id in item_to_category:
             return item_to_category[item_id]
         else:
             return "others"
-    # i want to apply the above function
-    converted_df_to_category = converted_df.applymap(item_id_to_category)
+    def get_avg_user_ranked_bin(row):
+        return sum(
+            10 if pd.isna(item_to_ranked_bin.get(item_id, float('nan'))) 
+            else int(item_to_ranked_bin[item_id]) 
+            for item_id in row
+        ) / len(row)
 
     def no_of_unique_categories_per_row(row):
         return len(set(row))
+    
+    converted_df["avg_ranked_bin"] = converted_df.apply(get_avg_user_ranked_bin, axis=1)
+    AVG_RANKED_BIN = converted_df["avg_ranked_bin"].mean()
+    converted_df.drop(["avg_ranked_bin"], axis=1, inplace=True)
+
+
+    converted_df_to_category = converted_df.applymap(item_id_to_category)
     converted_df_to_category["no_of_unique_categories"] = converted_df_to_category.apply(no_of_unique_categories_per_row, axis=1)
     converted_df_to_category["diversity"] = converted_df_to_category["no_of_unique_categories"] / 102
 
     DIVERSITY = converted_df_to_category["diversity"].mean()
-    
     # Get all unique categories
     unique_categories = set()
     for index, row in item_data.iterrows():
@@ -181,9 +193,10 @@ if __name__ == "__main__":
     COVERAGE = len(unique_categories) / 102
     # ============================ Calculating category coverage and diversity (End) ============================
 
-
+    # Calculating ranked bin diversity
     # ==== PRINT METRICS ====
     print(f"Coverage at {K}: {COVERAGE}")
     print(f"Diversity at {K}: {DIVERSITY}")
     print(f"Hit Rate at {K}: {HIT_RATE}")
     print(f"MRR at {K}: {AVG_MRR}")
+    print(f"Average Ranked Bin at {K}: {AVG_RANKED_BIN}")
